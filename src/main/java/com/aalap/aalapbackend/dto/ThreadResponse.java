@@ -13,4 +13,7 @@ public class ThreadResponse {
     UserInfo createdBy;
     Date createdAt;
     List<ContributionResponse> contributions;
+    private String masterAudioUrl;
+    private Integer bpm;
+    private String musicalKey;
 }

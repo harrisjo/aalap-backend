@@ -24,6 +24,13 @@ public class Nool {
     @ManyToOne
     @JoinColumn(name = "forked_from")
     private Nool forkedFrom;
+    @Column(name = "master_file_path")
+    private String masterFilePath;
+    @Column(name = "bpm")
+    private Integer bpm;
+
+    @Column(name = "musical_key")
+    private String musicalKey;
 
     @PrePersist
     public void prePersist() {

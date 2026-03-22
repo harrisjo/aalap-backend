@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -31,7 +32,7 @@ public class ContributionService {
         this.cloudinary = cloudinary;
     }
 
-    public ContributionResponse addContribution(long noolId, String role, String description, MultipartFile file) throws IOException {
+    public ContributionResponse addContribution(long noolId, String role, String description, MultipartFile file, Integer bpm, String musicalKey) throws IOException {
         User user = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
 
         Nool nool = noolRepository.findById(noolId).orElse(null);
@@ -39,20 +40,34 @@ public class ContributionService {
             throw new NoolNotFoundException("Thread not found!!");
         }
 
-        // 2. Upload the file to Cloudinary
-        // "resource_type", "auto" tells Cloudinary to automatically figure out if it's an mp3, wav, jpeg, or text file
-        Map uploadResult = cloudinary.uploader().upload(file.getBytes(), ObjectUtils.asMap("resource_type", "auto"));
+        // --- NEW: COMPOSER VALIDATION & SETTINGS ---
+        if (role != null && role.trim().equalsIgnoreCase("Composer")) {
 
-        // 3. Get the permanent streaming URL they give us back
+            // 1. Check if a composer already exists in this thread
+            List<Contribution> existingContributions = contributionRepository.findByNool(nool);
+            for (Contribution c : existingContributions) {
+                if (c.getRole() != null && c.getRole().trim().equalsIgnoreCase("Composer")) {
+                    throw new RuntimeException("This session already has a Composer. Only one Composer is allowed per track!");
+                }
+            }
+
+            // 2. If no composer exists, save the Tempo and Scale to the master Thread
+            nool.setBpm(bpm);
+            nool.setMusicalKey(musicalKey);
+            noolRepository.save(nool);
+        }
+
+        // 3. Upload the file to Cloudinary
+        Map uploadResult = cloudinary.uploader().upload(file.getBytes(), ObjectUtils.asMap("resource_type", "auto"));
         String cloudUrl = uploadResult.get("secure_url").toString();
 
-        // 4. Save it to MySQL exactly like before!
+        // 4. Save the Contribution exactly like before
         Contribution contribution = new Contribution();
         contribution.setNool(nool);
         contribution.setDescription(description);
         contribution.setUser(user);
         contribution.setRole(role);
-        contribution.setFilePath(cloudUrl); // Now storing the permanent Cloudinary URL!
+        contribution.setFilePath(cloudUrl);
         Contribution newContribution = contributionRepository.save(contribution);
 
         UserInfo userInfo = new UserInfo();
@@ -64,7 +79,7 @@ public class ContributionService {
         contributionResponse.setUser(userInfo);
         contributionResponse.setDescription(newContribution.getDescription());
         contributionResponse.setRole(newContribution.getRole());
-        contributionResponse.setFilePath(newContribution.getFilePath()); // This will pass the cloud URL to the frontend
+        contributionResponse.setFilePath(newContribution.getFilePath());
         contributionResponse.setId(newContribution.getId());
         contributionResponse.setCreatedAt(newContribution.getCreatedAt());
         contributionResponse.setNoolId(newContribution.getNool().getId());

@@ -10,6 +10,10 @@ import com.aalap.aalapbackend.repository.NoolRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import com.cloudinary.Cloudinary;
+import com.cloudinary.utils.ObjectUtils;
+import org.springframework.web.multipart.MultipartFile;
+import java.io.IOException;
 
 import java.util.*;
 
@@ -17,11 +21,13 @@ import java.util.*;
 public class NoolService {
     NoolRepository noolRepository;
     ContributionRepository contributionRepository;
+    Cloudinary cloudinary;
 
     @Autowired
-    public NoolService(NoolRepository noolRepository, ContributionRepository contributionRepository) {
+    public NoolService(NoolRepository noolRepository, ContributionRepository contributionRepository, Cloudinary cloudinary) {
         this.noolRepository = noolRepository;
         this.contributionRepository = contributionRepository;
+        this.cloudinary = cloudinary; // <-- Add this
     }
 
     public NoolResponse createNool(NoolRequest noolRequest) {
@@ -43,6 +49,7 @@ public class NoolService {
         noolResponse.setDescription(createdNool.getDescription());
         noolResponse.setCreatedBy(userInfo);
         noolResponse.setCreatedAt(createdNool.getCreatedAt());
+        noolResponse.setMasterAudioUrl(createdNool.getMasterFilePath());
         return noolResponse;
     }
 
@@ -85,6 +92,9 @@ public class NoolService {
         threadResponse.setContributions(contributionResponses);
         threadResponse.setCreatedBy(noolUserInfo);
         threadResponse.setCreatedAt(nool.getCreatedAt());
+        threadResponse.setMasterAudioUrl(nool.getMasterFilePath());
+        threadResponse.setBpm(nool.getBpm());
+        threadResponse.setMusicalKey(nool.getMusicalKey());
         return threadResponse;
     }
 
@@ -135,5 +145,37 @@ public class NoolService {
             threadSummaries.add(threadSummary);
         }
         return threadSummaries;
+    }
+
+    // --- NEW: UPLOAD MASTER MIX ---
+    public NoolResponse uploadMasterAudio(Long noolId, MultipartFile file) throws IOException {
+        Nool nool = noolRepository.findById(noolId).orElse(null);
+        if(nool == null) {
+            throw new NoolNotFoundException("Thread does not exist");
+        }
+
+        // 1. Upload the file to Cloudinary
+        Map uploadResult = cloudinary.uploader().upload(file.getBytes(), ObjectUtils.asMap("resource_type", "auto"));
+        String cloudUrl = uploadResult.get("secure_url").toString();
+
+        // 2. Save the URL to the database
+        nool.setMasterFilePath(cloudUrl);
+        Nool updatedNool = noolRepository.save(nool);
+
+        // 3. Return the updated response
+        UserInfo userInfo = new UserInfo();
+        userInfo.setId(updatedNool.getCreatedBy().getId());
+        userInfo.setName(updatedNool.getCreatedBy().getName());
+        userInfo.setEmail(updatedNool.getCreatedBy().getEmail());
+
+        NoolResponse response = new NoolResponse();
+        response.setId(updatedNool.getId());
+        response.setTitle(updatedNool.getTitle());
+        response.setDescription(updatedNool.getDescription());
+        response.setCreatedBy(userInfo);
+        response.setCreatedAt(updatedNool.getCreatedAt());
+        response.setMasterAudioUrl(updatedNool.getMasterFilePath());
+
+        return response;
     }
 }

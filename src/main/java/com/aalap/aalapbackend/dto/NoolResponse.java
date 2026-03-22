@@ -11,4 +11,5 @@ public class NoolResponse {
     String description;
     UserInfo createdBy;
     Date createdAt;
+    private String masterAudioUrl;
 }
