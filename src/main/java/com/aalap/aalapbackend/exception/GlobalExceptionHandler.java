@@ -25,4 +25,9 @@ public class GlobalExceptionHandler {
     public ResponseEntity<String> handleNoolNotFound(NoolNotFoundException e) {
         return ResponseEntity.status(404).body(e.getMessage());
     }
+
+    @ExceptionHandler(DuplicateRoleException.class)
+    public ResponseEntity<String> handleDuplicateRoleException(DuplicateRoleException e) {
+        return ResponseEntity.status(400).body(e.getMessage());
+    }
 }

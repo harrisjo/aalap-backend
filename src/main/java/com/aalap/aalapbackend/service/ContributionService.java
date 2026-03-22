@@ -5,6 +5,7 @@ import com.aalap.aalapbackend.dto.UserInfo;
 import com.aalap.aalapbackend.entity.Contribution;
 import com.aalap.aalapbackend.entity.Nool;
 import com.aalap.aalapbackend.entity.User;
+import com.aalap.aalapbackend.exception.DuplicateRoleException;
 import com.aalap.aalapbackend.exception.NoolNotFoundException;
 import com.aalap.aalapbackend.repository.ContributionRepository;
 import com.aalap.aalapbackend.repository.NoolRepository;
@@ -47,8 +48,7 @@ public class ContributionService {
             List<Contribution> existingContributions = contributionRepository.findByNool(nool);
             for (Contribution c : existingContributions) {
                 if (c.getRole() != null && c.getRole().trim().equalsIgnoreCase("Composer")) {
-                    throw new RuntimeException("This session already has a Composer. Only one Composer is allowed per track!");
-                }
+                    throw new DuplicateRoleException("This session already has a Composer. Only one Composer is allowed per track!");                }
             }
 
             // 2. If no composer exists, save the Tempo and Scale to the master Thread
