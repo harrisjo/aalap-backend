@@ -12,9 +12,11 @@ import com.aalap.aalapbackend.repository.NoolRepository;
 import com.cloudinary.Cloudinary;
 import com.cloudinary.utils.ObjectUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.util.List;
@@ -22,68 +24,151 @@ import java.util.Map;
 
 @Service
 public class ContributionService {
+
     ContributionRepository contributionRepository;
     NoolRepository noolRepository;
-    Cloudinary cloudinary; // 1. Injecting our new Cloudinary Bean
+    Cloudinary cloudinary;
 
     @Autowired
-    public ContributionService(ContributionRepository contributionRepository, NoolRepository noolRepository, Cloudinary cloudinary) {
+    public ContributionService(ContributionRepository contributionRepository,
+                               NoolRepository noolRepository,
+                               Cloudinary cloudinary) {
         this.contributionRepository = contributionRepository;
         this.noolRepository = noolRepository;
         this.cloudinary = cloudinary;
     }
 
-    public ContributionResponse addContribution(long noolId, String role, String description, MultipartFile file, Integer bpm, String musicalKey) throws IOException {
+    // ─── ADD CONTRIBUTION ────────────────────────────────────────────────────────
+
+    public ContributionResponse addContribution(long noolId, String role, String description,
+                                                MultipartFile file, Integer bpm, String musicalKey) throws IOException {
         User user = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
 
-        Nool nool = noolRepository.findById(noolId).orElse(null);
-        if(nool == null){
-            throw new NoolNotFoundException("Thread not found!!");
-        }
+        Nool nool = noolRepository.findById(noolId)
+                .orElseThrow(() -> new NoolNotFoundException("Thread not found!"));
 
-        // --- NEW: COMPOSER VALIDATION & SETTINGS ---
         if (role != null && role.trim().equalsIgnoreCase("Composer")) {
-
-            // 1. Check if a composer already exists in this thread
-            List<Contribution> existingContributions = contributionRepository.findByNool(nool);
-            for (Contribution c : existingContributions) {
+            List<Contribution> existing = contributionRepository.findByNool(nool);
+            for (Contribution c : existing) {
                 if (c.getRole() != null && c.getRole().trim().equalsIgnoreCase("Composer")) {
-                    throw new DuplicateRoleException("This session already has a Composer. Only one Composer is allowed per track!");                }
+                    throw new DuplicateRoleException("This session already has a Composer. Only one Composer is allowed per track!");
+                }
             }
-
-            // 2. If no composer exists, save the Tempo and Scale to the master Thread
             nool.setBpm(bpm);
             nool.setMusicalKey(musicalKey);
             noolRepository.save(nool);
         }
 
-        // 3. Upload the file to Cloudinary
         Map uploadResult = cloudinary.uploader().upload(file.getBytes(), ObjectUtils.asMap("resource_type", "auto"));
         String cloudUrl = uploadResult.get("secure_url").toString();
 
-        // 4. Save the Contribution exactly like before
         Contribution contribution = new Contribution();
         contribution.setNool(nool);
         contribution.setDescription(description);
         contribution.setUser(user);
         contribution.setRole(role);
         contribution.setFilePath(cloudUrl);
-        Contribution newContribution = contributionRepository.save(contribution);
+        Contribution saved = contributionRepository.save(contribution);
 
+        return toResponse(saved);
+    }
+
+    // ─── DELETE CONTRIBUTION ─────────────────────────────────────────────────────
+
+    public void deleteContribution(long contributionId) throws IOException {
+        User loggedInUser = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+
+        Contribution contribution = contributionRepository.findById(contributionId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Contribution not found"));
+
+        // Only the owner can delete their own stem
+        if (contribution.getUser().getId() != loggedInUser.getId()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You can only delete your own contributions");
+        }
+
+        // If this was the Composer stem, clear BPM and key from the thread
+        if (contribution.getRole() != null && contribution.getRole().trim().equalsIgnoreCase("Composer")) {
+            Nool nool = contribution.getNool();
+            nool.setBpm(null);
+            nool.setMusicalKey(null);
+            noolRepository.save(nool);
+        }
+
+        // Delete from Cloudinary
+        if (contribution.getFilePath() != null && !contribution.getFilePath().isBlank()) {
+            String publicId = extractPublicId(contribution.getFilePath());
+            cloudinary.uploader().destroy(publicId, ObjectUtils.asMap("resource_type", "auto"));
+        }
+
+        // Delete from DB
+        contributionRepository.deleteById(contributionId);
+    }
+
+    // ─── REUPLOAD CONTRIBUTION FILE ───────────────────────────────────────────────
+
+    public ContributionResponse reuploadContributionFile(long contributionId, MultipartFile newFile) throws IOException {
+        User loggedInUser = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+
+        Contribution contribution = contributionRepository.findById(contributionId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Contribution not found"));
+
+        // Only the owner can reupload their own stem
+        if (contribution.getUser().getId() != loggedInUser.getId()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You can only edit your own contributions");
+        }
+
+        // Delete old file from Cloudinary
+        if (contribution.getFilePath() != null && !contribution.getFilePath().isBlank()) {
+            String oldPublicId = extractPublicId(contribution.getFilePath());
+            cloudinary.uploader().destroy(oldPublicId, ObjectUtils.asMap("resource_type", "auto"));
+        }
+
+        // Upload new file to Cloudinary
+        Map uploadResult = cloudinary.uploader().upload(newFile.getBytes(), ObjectUtils.asMap("resource_type", "auto"));
+        String newCloudUrl = uploadResult.get("secure_url").toString();
+
+        // Update file path in DB
+        contribution.setFilePath(newCloudUrl);
+        Contribution saved = contributionRepository.save(contribution);
+
+        return toResponse(saved);
+    }
+
+    // ─── HELPERS ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Extracts the Cloudinary public_id from a secure_url.
+     * e.g. https://res.cloudinary.com/mycloud/video/upload/v1234567890/filename.mp3
+     *   → filename
+     */
+    private String extractPublicId(String cloudUrl) {
+        String afterUpload = cloudUrl.split("/upload/")[1];
+        // Strip version prefix like "v1234567890/"
+        if (afterUpload.matches("v\\d+/.*")) {
+            afterUpload = afterUpload.replaceFirst("v\\d+/", "");
+        }
+        // Strip file extension
+        int dotIndex = afterUpload.lastIndexOf('.');
+        if (dotIndex > 0) {
+            afterUpload = afterUpload.substring(0, dotIndex);
+        }
+        return afterUpload;
+    }
+
+    private ContributionResponse toResponse(Contribution c) {
         UserInfo userInfo = new UserInfo();
-        userInfo.setId(newContribution.getUser().getId());
-        userInfo.setName(newContribution.getUser().getName());
-        userInfo.setEmail(newContribution.getUser().getEmail());
+        userInfo.setId(c.getUser().getId());
+        userInfo.setName(c.getUser().getName());
+        userInfo.setEmail(c.getUser().getEmail());
 
-        ContributionResponse contributionResponse = new ContributionResponse();
-        contributionResponse.setUser(userInfo);
-        contributionResponse.setDescription(newContribution.getDescription());
-        contributionResponse.setRole(newContribution.getRole());
-        contributionResponse.setFilePath(newContribution.getFilePath());
-        contributionResponse.setId(newContribution.getId());
-        contributionResponse.setCreatedAt(newContribution.getCreatedAt());
-        contributionResponse.setNoolId(newContribution.getNool().getId());
-
-        return contributionResponse;
+        ContributionResponse response = new ContributionResponse();
+        response.setId(c.getId());
+        response.setUser(userInfo);
+        response.setRole(c.getRole());
+        response.setDescription(c.getDescription());
+        response.setFilePath(c.getFilePath());
+        response.setNoolId(c.getNool().getId());
+        response.setCreatedAt(c.getCreatedAt());
+        return response;
     }
 }
