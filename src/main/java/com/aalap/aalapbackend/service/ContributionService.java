@@ -81,8 +81,8 @@ public class ContributionService {
         Contribution contribution = contributionRepository.findById(contributionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Contribution not found"));
 
-        // Only the owner can delete their own stem
-        if (contribution.getUser().getId() != loggedInUser.getId()) {
+        // FIX 1: Safely cast to primitive 'long' to avoid object reference mismatch bugs
+        if ((long) contribution.getUser().getId() != (long) loggedInUser.getId()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You can only delete your own contributions");
         }
 
@@ -94,10 +94,12 @@ public class ContributionService {
             noolRepository.save(nool);
         }
 
-        // Delete from Cloudinary
+        // FIX 2: Explicitly tell Cloudinary what type of file it is destroying
         if (contribution.getFilePath() != null && !contribution.getFilePath().isBlank()) {
             String publicId = extractPublicId(contribution.getFilePath());
-            cloudinary.uploader().destroy(publicId, ObjectUtils.asMap("resource_type", "auto"));
+            String rType = extractResourceType(contribution.getFilePath()); // New helper
+
+            cloudinary.uploader().destroy(publicId, ObjectUtils.asMap("resource_type", rType));
         }
 
         // Delete from DB
@@ -112,18 +114,20 @@ public class ContributionService {
         Contribution contribution = contributionRepository.findById(contributionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Contribution not found"));
 
-        // Only the owner can reupload their own stem
-        if (contribution.getUser().getId() != loggedInUser.getId()) {
+        // FIX 1: Safe ID comparison
+        if ((long) contribution.getUser().getId() != (long) loggedInUser.getId()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You can only edit your own contributions");
         }
 
-        // Delete old file from Cloudinary
+        // FIX 2: Explicitly tell Cloudinary the correct resource type to destroy
         if (contribution.getFilePath() != null && !contribution.getFilePath().isBlank()) {
             String oldPublicId = extractPublicId(contribution.getFilePath());
-            cloudinary.uploader().destroy(oldPublicId, ObjectUtils.asMap("resource_type", "auto"));
+            String oldRType = extractResourceType(contribution.getFilePath());
+
+            cloudinary.uploader().destroy(oldPublicId, ObjectUtils.asMap("resource_type", oldRType));
         }
 
-        // Upload new file to Cloudinary
+        // Upload new file to Cloudinary (Upload STILL supports "auto")
         Map uploadResult = cloudinary.uploader().upload(newFile.getBytes(), ObjectUtils.asMap("resource_type", "auto"));
         String newCloudUrl = uploadResult.get("secure_url").toString();
 
@@ -136,10 +140,21 @@ public class ContributionService {
 
     // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
+    // NEW HELPER: Cloudinary stores audio files as "video" and text files as "raw".
+    // We parse the URL to find out which one it is so we can delete it safely.
+    private String extractResourceType(String cloudUrl) {
+        if (cloudUrl.contains("/video/")) {
+            return "video"; // Audio files
+        } else if (cloudUrl.contains("/raw/")) {
+            return "raw";   // Text files like lyrics
+        }
+        return "image";     // Default fallback
+    }
+
     /**
      * Extracts the Cloudinary public_id from a secure_url.
      * e.g. https://res.cloudinary.com/mycloud/video/upload/v1234567890/filename.mp3
-     *   → filename
+     * → filename
      */
     private String extractPublicId(String cloudUrl) {
         String afterUpload = cloudUrl.split("/upload/")[1];
