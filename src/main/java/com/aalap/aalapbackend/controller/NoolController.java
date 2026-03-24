@@ -6,6 +6,7 @@ import com.aalap.aalapbackend.dto.NoolResponse;
 import com.aalap.aalapbackend.dto.ThreadResponse;
 import com.aalap.aalapbackend.dto.ThreadSummary;
 import com.aalap.aalapbackend.service.NoolService;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -26,7 +27,7 @@ public class NoolController {
         this.noolService = noolService;
     }
     @PostMapping
-    public NoolResponse createNool(@RequestBody NoolRequest noolRequest) {
+    public NoolResponse createNool(@Valid @RequestBody NoolRequest noolRequest) {
         return noolService.createNool(noolRequest);
     }
 

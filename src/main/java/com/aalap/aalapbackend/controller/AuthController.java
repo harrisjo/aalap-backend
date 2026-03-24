@@ -5,6 +5,7 @@ import com.aalap.aalapbackend.dto.LoginRequest;
 import com.aalap.aalapbackend.dto.RegisterRequest;
 import com.aalap.aalapbackend.entity.User;
 import com.aalap.aalapbackend.service.AuthService;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -22,12 +23,12 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    public AuthResponse registerUser(@RequestBody RegisterRequest registerRequest) {
+    public AuthResponse registerUser(@Valid @RequestBody RegisterRequest registerRequest) {
          return authService.register(registerRequest);
     }
 
     @PostMapping("/login")
-    public AuthResponse loginUser(@RequestBody LoginRequest loginRequest) {
+    public AuthResponse loginUser(@Valid @RequestBody LoginRequest loginRequest) {
         return authService.login(loginRequest);
     }
 }

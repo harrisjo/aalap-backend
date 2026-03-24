@@ -18,8 +18,8 @@ import java.util.ArrayList;
 
 @Component
 public class JwtFilter extends OncePerRequestFilter {
-    UserRepository  userRepository;
-    JwtUtil jwtUtil;
+    private final UserRepository userRepository;
+    private final JwtUtil jwtUtil;
 
     public JwtFilter(UserRepository userRepository, JwtUtil jwtUtil) {
         this.userRepository = userRepository;
@@ -28,26 +28,26 @@ public class JwtFilter extends OncePerRequestFilter {
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
-            String authHeader = request.getHeader("Authorization");
-            if(authHeader == null || !authHeader.startsWith("Bearer ")){
-                filterChain.doFilter(request,response);
-                return;
-            }
-            String token = authHeader.substring(7);
-            System.out.println("TOKEN : " + token);
-            boolean check = jwtUtil.validateToken(token);
-            System.out.println("VALID : " + check);
-            if(!check){
-                filterChain.doFilter(request,response);
-                return;
-            }
-            String email = jwtUtil.extractEmail(token);
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+        String token = authHeader.substring(7);
+        // Removed: System.out.println("TOKEN : " + token);
+        boolean check = jwtUtil.validateToken(token);
+        // Removed: System.out.println("VALID : " + check);
+        if (!check) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+        String email = jwtUtil.extractEmail(token);
 
-            User user =  userRepository.findByEmail(email).orElse(null);
-            if(user == null){
-                filterChain.doFilter(request,response);
-                return;
-            }
+        User user = userRepository.findByEmail(email).orElse(null);
+        if (user == null) {
+            filterChain.doFilter(request, response);
+            return;
+        }
 
         UsernamePasswordAuthenticationToken authentication =
                 new UsernamePasswordAuthenticationToken(user, null, new ArrayList<>());
