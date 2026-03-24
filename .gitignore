@@ -34,6 +34,6 @@ build/
 
 *.log
 .env
-application.yaml
+
 C:/aalap-uploads/
 uploads/
