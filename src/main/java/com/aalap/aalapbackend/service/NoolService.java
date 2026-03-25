@@ -8,14 +8,16 @@ import com.aalap.aalapbackend.exception.NoolNotFoundException;
 import com.aalap.aalapbackend.repository.ContributionRepository;
 import com.aalap.aalapbackend.repository.NoolRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import com.cloudinary.Cloudinary;
 import com.cloudinary.utils.ObjectUtils;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
-import java.io.IOException;
+import org.springframework.web.server.ResponseStatusException;
 
+import java.io.IOException;
 import java.util.*;
 
 @Service
@@ -29,7 +31,7 @@ public class NoolService {
     public NoolService(NoolRepository noolRepository, ContributionRepository contributionRepository, Cloudinary cloudinary) {
         this.noolRepository = noolRepository;
         this.contributionRepository = contributionRepository;
-        this.cloudinary = cloudinary; // <-- Add this
+        this.cloudinary = cloudinary;
     }
 
     public NoolResponse createNool(NoolRequest noolRequest) {
@@ -149,22 +151,18 @@ public class NoolService {
         return threadSummaries;
     }
 
-    // --- NEW: UPLOAD MASTER MIX ---
     public NoolResponse uploadMasterAudio(Long noolId, MultipartFile file) throws IOException {
         Nool nool = noolRepository.findById(noolId).orElse(null);
         if(nool == null) {
             throw new NoolNotFoundException("Thread does not exist");
         }
 
-        // 1. Upload the file to Cloudinary
         Map uploadResult = cloudinary.uploader().upload(file.getBytes(), ObjectUtils.asMap("resource_type", "auto"));
         String cloudUrl = uploadResult.get("secure_url").toString();
 
-        // 2. Save the URL to the database
         nool.setMasterFilePath(cloudUrl);
         Nool updatedNool = noolRepository.save(nool);
 
-        // 3. Return the updated response
         UserInfo userInfo = new UserInfo();
         userInfo.setId(updatedNool.getCreatedBy().getId());
         userInfo.setName(updatedNool.getCreatedBy().getName());
@@ -179,5 +177,74 @@ public class NoolService {
         response.setMasterAudioUrl(updatedNool.getMasterFilePath());
 
         return response;
+    }
+
+    // ─── DELETE THREAD ────────────────────────────────────────────────────────
+    // Only the creator of the thread can delete it.
+    // Deletes all contribution files from Cloudinary, the master mix from
+    // Cloudinary, all contribution rows from DB, then the thread itself.
+
+    public void deleteNool(Long noolId) throws IOException {
+        User loggedInUser = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+
+        Nool nool = noolRepository.findById(noolId)
+                .orElseThrow(() -> new NoolNotFoundException("Thread not found"));
+
+        // Only the creator can delete the thread
+        if ((long) nool.getCreatedBy().getId() != (long) loggedInUser.getId()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the creator can delete this thread");
+        }
+
+        // 1. Delete all contribution files from Cloudinary
+        List<Contribution> contributions = contributionRepository.findByNool(nool);
+        for (Contribution contribution : contributions) {
+            if (contribution.getFilePath() != null && !contribution.getFilePath().isBlank()) {
+                try {
+                    String publicId = extractPublicId(contribution.getFilePath());
+                    String resourceType = extractResourceType(contribution.getFilePath());
+                    cloudinary.uploader().destroy(publicId, ObjectUtils.asMap("resource_type", resourceType));
+                } catch (Exception e) {
+                    // Log but don't block deletion if Cloudinary removal fails
+                    System.err.println("Could not delete contribution file from Cloudinary: " + e.getMessage());
+                }
+            }
+        }
+
+        // 2. Delete all contributions from DB
+        contributionRepository.deleteAll(contributions);
+
+        // 3. Delete master mix from Cloudinary if it exists
+        if (nool.getMasterFilePath() != null && !nool.getMasterFilePath().isBlank()) {
+            try {
+                String publicId = extractPublicId(nool.getMasterFilePath());
+                String resourceType = extractResourceType(nool.getMasterFilePath());
+                cloudinary.uploader().destroy(publicId, ObjectUtils.asMap("resource_type", resourceType));
+            } catch (Exception e) {
+                System.err.println("Could not delete master file from Cloudinary: " + e.getMessage());
+            }
+        }
+
+        // 4. Delete the thread from DB
+        noolRepository.delete(nool);
+    }
+
+    // ─── HELPERS ─────────────────────────────────────────────────────────────
+
+    private String extractResourceType(String cloudUrl) {
+        if (cloudUrl.contains("/video/")) return "video";
+        if (cloudUrl.contains("/raw/"))  return "raw";
+        return "image";
+    }
+
+    private String extractPublicId(String cloudUrl) {
+        String afterUpload = cloudUrl.split("/upload/")[1];
+        if (afterUpload.matches("v\\d+/.*")) {
+            afterUpload = afterUpload.replaceFirst("v\\d+/", "");
+        }
+        int dotIndex = afterUpload.lastIndexOf('.');
+        if (dotIndex > 0) {
+            afterUpload = afterUpload.substring(0, dotIndex);
+        }
+        return afterUpload;
     }
 }

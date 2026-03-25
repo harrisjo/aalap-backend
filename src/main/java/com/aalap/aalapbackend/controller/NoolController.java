@@ -26,6 +26,7 @@ public class NoolController {
     public NoolController(NoolService noolService) {
         this.noolService = noolService;
     }
+
     @PostMapping
     public NoolResponse createNool(@Valid @RequestBody NoolRequest noolRequest) {
         return noolService.createNool(noolRequest);
@@ -41,7 +42,6 @@ public class NoolController {
         return noolService.getAllNools();
     }
 
-    // --- NEW: UPLOAD MASTER MIX ENDPOINT ---
     @PostMapping(value = "/{noolId}/master", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<NoolResponse> uploadMasterAudio(
             @PathVariable Long noolId,
@@ -52,5 +52,16 @@ public class NoolController {
         } catch (IOException e) {
             return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
         }
+    }
+
+    // ─── DELETE THREAD ────────────────────────────────────────────────────────
+    // Only the creator of the thread can call this.
+    // Deletes all contributions + their Cloudinary files + the master mix,
+    // then removes the thread from the DB.
+
+    @DeleteMapping("/{threadId}")
+    public ResponseEntity<Void> deleteNool(@PathVariable Long threadId) throws IOException {
+        noolService.deleteNool(threadId);
+        return ResponseEntity.noContent().build(); // 204 No Content
     }
 }
