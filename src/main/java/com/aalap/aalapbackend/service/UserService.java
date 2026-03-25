@@ -11,31 +11,44 @@ import com.aalap.aalapbackend.exception.NullUserException;
 import com.aalap.aalapbackend.repository.ContributionRepository;
 import com.aalap.aalapbackend.repository.NoolRepository;
 import com.aalap.aalapbackend.repository.UserRepository;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 @Service
-@Transactional(readOnly=true)
+@Transactional(readOnly = true)
 public class UserService {
-    UserRepository userRepository;
-    NoolRepository nolRepository;
-    ContributionRepository contributionRepository;
+    private final UserRepository userRepository;
+    private final NoolRepository nolRepository;
+    private final ContributionRepository contributionRepository;
+    private final NoolService noolService;
+    private final ContributionService contributionService;
 
-    public UserService(UserRepository userRepository, NoolRepository nolRepository, ContributionRepository contributionRepository) {
+    public UserService(UserRepository userRepository,
+                       NoolRepository nolRepository,
+                       ContributionRepository contributionRepository,
+                       @Lazy NoolService noolService,
+                       @Lazy ContributionService contributionService) {
         this.userRepository = userRepository;
         this.nolRepository = nolRepository;
         this.contributionRepository = contributionRepository;
+        this.noolService = noolService;
+        this.contributionService = contributionService;
     }
 
     public UserProfileResponse getUserProfile(long userId) {
         User user = userRepository.findById(userId).orElse(null);
         if (user == null) {
-            throw new NullUserException("User does not exists!");
+            throw new NullUserException("User does not exist!");
         }
 
         UserProfileResponse userProfileResponse = new UserProfileResponse();
@@ -44,13 +57,15 @@ public class UserService {
         userProfileResponse.setEmail(user.getEmail());
         userProfileResponse.setBio(user.getBio());
         userProfileResponse.setCreatedAt(user.getCreatedAt());
+
         List<Nool> threadsCreatedByCurrUser = nolRepository.findByCreatedBy(user);
         List<Contribution> contributionsOfCurrUser = contributionRepository.findByUser(user);
 
-        List<ThreadSummary> threadsOfCurrUser = new ArrayList<ThreadSummary>();
-        List<ContributionResponse> contributionsOfCurrUserResponse = new ArrayList<ContributionResponse>();
-        for(Nool nool : threadsCreatedByCurrUser){
-            List<Contribution> noolContributions =  contributionRepository.findByNool(nool);
+        List<ThreadSummary> threadsOfCurrUser = new ArrayList<>();
+        List<ContributionResponse> contributionsOfCurrUserResponse = new ArrayList<>();
+
+        for (Nool nool : threadsCreatedByCurrUser) {
+            List<Contribution> noolContributions = contributionRepository.findByNool(nool);
             ThreadSummary threadSummary = new ThreadSummary();
             threadSummary.setId(nool.getId());
             threadSummary.setTitle(nool.getTitle());
@@ -64,12 +79,12 @@ public class UserService {
             userInfo.setEmail(nool.getCreatedBy().getEmail());
             threadSummary.setCreatedBy(userInfo);
 
-            Map<String, List<String>> rolesWithContributors = new LinkedHashMap<String, List<String>>();
+            Map<String, List<String>> rolesWithContributors = new LinkedHashMap<>();
 
-            for(Contribution contribution : noolContributions) {
+            for (Contribution contribution : noolContributions) {
                 String role = contribution.getRole();
                 String name = contribution.getUser().getName();
-                if(rolesWithContributors.containsKey(role)) {
+                if (rolesWithContributors.containsKey(role)) {
                     rolesWithContributors.get(role).add(name);
                 } else {
                     List<String> names = new ArrayList<>();
@@ -79,10 +94,9 @@ public class UserService {
             }
             threadSummary.setRolesWithContributors(rolesWithContributors);
             threadsOfCurrUser.add(threadSummary);
-
         }
 
-        for(Contribution contribution : contributionsOfCurrUser){
+        for (Contribution contribution : contributionsOfCurrUser) {
             ContributionResponse contributionResponse = new ContributionResponse();
             contributionResponse.setId(contribution.getId());
             contributionResponse.setRole(contribution.getRole());
@@ -102,7 +116,31 @@ public class UserService {
         userProfileResponse.setContributions(contributionsOfCurrUserResponse);
         userProfileResponse.setThreadsCreated(threadsOfCurrUser);
         return userProfileResponse;
+    }
 
+    // ─── LEAVE AALAP (DELETE ACCOUNT) ─────────────────────────────────────────────
 
+    @Transactional(readOnly = false)
+    public void deleteUserAccount() throws IOException {
+        User loggedInUser = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        User user = userRepository.findById(loggedInUser.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+
+        // 1. Delete all threads created by the user
+        // This leverages NoolService to wipe master files and all stems inside these threads.
+        List<Nool> userThreads = nolRepository.findByCreatedBy(user);
+        for (Nool thread : userThreads) {
+            noolService.deleteNool(thread.getId());
+        }
+
+        // 2. Delete the user's remaining stems (contributions in OTHER people's threads)
+        // This leverages ContributionService to safely delete the Cloudinary files and handle role cleanups.
+        List<Contribution> userContributions = contributionRepository.findByUser(user);
+        for (Contribution contribution : userContributions) {
+            contributionService.deleteContribution(contribution.getId());
+        }
+
+        // 3. Delete the user record itself
+        userRepository.delete(user);
     }
 }

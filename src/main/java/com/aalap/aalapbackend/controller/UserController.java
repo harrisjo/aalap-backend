@@ -4,7 +4,10 @@ import com.aalap.aalapbackend.dto.UserProfileResponse;
 import com.aalap.aalapbackend.security.JwtUtil;
 import com.aalap.aalapbackend.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.io.IOException;
 
 @RestController
 @RequestMapping("/api/users")
@@ -34,5 +37,11 @@ public class UserController {
 
         // 3. Hand it directly to the Sound Engineer! No email lookups required.
         return userService.getUserProfile(userId);
+    }
+
+    @DeleteMapping("/me")
+    public ResponseEntity<Void> leaveAalap() throws IOException {
+        userService.deleteUserAccount();
+        return ResponseEntity.noContent().build();
     }
 }
