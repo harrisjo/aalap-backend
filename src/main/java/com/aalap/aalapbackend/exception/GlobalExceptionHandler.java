@@ -69,7 +69,6 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidationExceptions(MethodArgumentNotValidException ex) {
-        // Get first validation error message
         String message = ex.getBindingResult().getFieldErrors().stream()
                 .map(error -> error.getField() + ": " + error.getDefaultMessage())
                 .findFirst()
@@ -83,14 +82,24 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
     }
 
-    // Optional: catch-all for any other exception
+    // ✅ FIXED: Now logs the real exception so you can see what's actually
+    // failing in Render's logs (Dashboard → your service → Logs).
+    // Previously this swallowed all errors silently, making debugging impossible.
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGenericException(Exception e) {
+
+        // This prints the full stack trace to Render's log console
+        System.err.println("=== UNHANDLED EXCEPTION ===");
+        System.err.println("Type   : " + e.getClass().getName());
+        System.err.println("Message: " + e.getMessage());
+        e.printStackTrace();
+
         ErrorResponse error = new ErrorResponse(
                 LocalDateTime.now(),
                 HttpStatus.INTERNAL_SERVER_ERROR.value(),
                 "Internal Server Error",
-                "An unexpected error occurred"
+                // ✅ Return the real message so the frontend can also show it
+                e.getMessage() != null ? e.getMessage() : "An unexpected error occurred"
         );
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
     }
