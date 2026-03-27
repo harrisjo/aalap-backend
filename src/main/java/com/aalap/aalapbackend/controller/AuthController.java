@@ -3,7 +3,6 @@ package com.aalap.aalapbackend.controller;
 import com.aalap.aalapbackend.dto.AuthResponse;
 import com.aalap.aalapbackend.dto.LoginRequest;
 import com.aalap.aalapbackend.dto.RegisterRequest;
-import com.aalap.aalapbackend.entity.User;
 import com.aalap.aalapbackend.service.AuthService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;

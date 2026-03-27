@@ -1,0 +1,11 @@
+POST https://harrisjoshua-aalap-backend.hf.space/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "harrisjo1810@gmail.com",
+  "password": "Harris1234"
+}
+
+### Get User Profile (Protected)
+GET https://harrisjoshua-aalap-backend.hf.space/api/users/me
+Authorization: Bearer eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJoYXJyaXNqbzE4MTBAZ21haWwuY29tIiwidXNlcklkIjo2LCJuYW1lIjoiSGFycmlzIEpvc2h1YSIsImlhdCI6MTc3NDYyMzkyOCwiZXhwIjoxNzc0NjI3NTI4fQ.5kZAjXzZerlA-HtGwa4Y_T_4S9FQ4AU-ac6_V8veyULpmq-fBe82qD-UdibUzCjPQYo7LvDbUdP-JEEnZn-apw

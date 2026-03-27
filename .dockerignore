@@ -1,0 +1,20 @@
+# Build output
+target/
+!.jar
+
+# Git
+.git/
+.gitignore
+
+# IDEs (IntelliJ/VS Code)
+.idea/
+*.iml
+.vscode/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Docker files
+Dockerfile
+.dockerignore
