@@ -1,23 +1,10 @@
-# Stage 1: Build the JAR
-FROM eclipse-temurin:25-jdk AS build
-WORKDIR /app
-
-# Copy the source code (filtered by your .dockerignore)
+# Step 1: Build the JAR (Multi-stage build)
+FROM maven:3.9.9-eclipse-temurin-25 AS build
 COPY . .
+RUN mvn clean package -DskipTests
 
-# Build the project
-RUN chmod +x mvnw
-RUN ./mvnw clean package -DskipTests
-
-# Stage 2: The Runtime Stage
+# Step 2: Run the JAR
 FROM eclipse-temurin:25-jre
-WORKDIR /app
-
-# Copy ONLY the finished jar from the build stage
-COPY --from=build /app/target/*.jar app.jar
-
+COPY --from=build /target/*.jar app.jar
 EXPOSE 8080
-
-# Execute the application
 ENTRYPOINT ["java", "-jar", "app.jar"]
-

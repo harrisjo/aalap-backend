@@ -1,20 +1,17 @@
-# Build output
-target/
-!.jar
+# Ignore everything first (Pro strategy)
+**/.git
+**/.gitignore
+**/.idea
+**/.vscode
+**/target
+**/*.iml
 
-# Git
-.git/
-.gitignore
+# But EXPLICITLY allow what we need to build
+!pom.xml
+!src/
+!mvnw
+!.mvn/
 
-# IDEs (IntelliJ/VS Code)
-.idea/
-*.iml
-.vscode/
-
-# System files
+# System junk
 .DS_Store
 Thumbs.db
-
-# Docker files
-Dockerfile
-.dockerignore
