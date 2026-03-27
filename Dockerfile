@@ -1,7 +1,8 @@
-# Step 1: Build the JAR (Multi-stage build)
-FROM maven:3.9.9-eclipse-temurin-25 AS build
+# Step 1: Build the JAR using the included Maven Wrapper
+FROM eclipse-temurin:25-jdk AS build
 COPY . .
-RUN mvn clean package -DskipTests
+# Fix permissions for the wrapper and build
+RUN chmod +x mvnw && ./mvnw clean package -DskipTests
 
 # Step 2: Run the JAR
 FROM eclipse-temurin:25-jre
