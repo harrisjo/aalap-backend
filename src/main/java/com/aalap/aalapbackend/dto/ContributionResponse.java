@@ -9,6 +9,7 @@ public class ContributionResponse {
     UserInfo user;
     String role;
     long noolId;
+    String noolTitle;
     String description;
     String filePath;
     String fileType; // NEW FIELD

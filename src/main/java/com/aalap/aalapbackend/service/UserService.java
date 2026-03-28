@@ -101,6 +101,7 @@ public class UserService {
             contributionResponse.setId(contribution.getId());
             contributionResponse.setRole(contribution.getRole());
             contributionResponse.setNoolId(contribution.getNool().getId());
+            contributionResponse.setNoolTitle(contribution.getNool().getTitle());
             contributionResponse.setDescription(contribution.getDescription());
             contributionResponse.setFilePath(contribution.getFilePath());
             contributionResponse.setCreatedAt(contribution.getCreatedAt());
