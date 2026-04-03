@@ -10,7 +10,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import java.io.IOException;
 
 @RestController
 @RequestMapping("/api/users")
@@ -36,8 +35,7 @@ public class UserController {
 
     @DeleteMapping("/me")
     public ResponseEntity<Void> leaveAalap(
-            @RequestBody @Valid DeleteAccountRequest request) throws IOException {
-        // Password is verified inside the service before any data is deleted.
+            @RequestBody @Valid DeleteAccountRequest request) {
         userService.deleteUserAccount(request.getPassword());
         return ResponseEntity.noContent().build();
     }

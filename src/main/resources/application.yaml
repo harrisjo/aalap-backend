@@ -37,3 +37,8 @@ cloudinary:
   cloud_name: ${CLOUDINARY_CLOUD_NAME}
   api_key: ${CLOUDINARY_API_KEY}
   api_secret: ${CLOUDINARY_API_SECRET}
+
+resend:
+  # Set RESEND_API_KEY in your environment. Set RESEND_FROM to a verified sender address.
+  api-key: ${RESEND_API_KEY:}
+  from-address: ${RESEND_FROM:Aalap <onboarding@resend.dev>}

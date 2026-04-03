@@ -12,7 +12,7 @@ import com.aalap.aalapbackend.repository.ContributionRepository;
 import com.aalap.aalapbackend.repository.NoolRepository;
 import com.aalap.aalapbackend.repository.UserRepository;
 import com.aalap.aalapbackend.security.TokenBlacklistService;
-import org.springframework.context.annotation.Lazy;
+import com.aalap.aalapbackend.util.GravatarUtil;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -20,7 +20,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.io.IOException;
 import java.util.*;
 
 @Service
@@ -29,23 +28,17 @@ public class UserService {
     private final UserRepository userRepository;
     private final NoolRepository nolRepository;
     private final ContributionRepository contributionRepository;
-    private final NoolService noolService;
-    private final ContributionService contributionService;
     private final PasswordEncoder passwordEncoder;
     private final TokenBlacklistService tokenBlacklistService;
 
     public UserService(UserRepository userRepository,
                        NoolRepository nolRepository,
                        ContributionRepository contributionRepository,
-                       @Lazy NoolService noolService,
-                       @Lazy ContributionService contributionService,
                        PasswordEncoder passwordEncoder,
                        TokenBlacklistService tokenBlacklistService) {
         this.userRepository = userRepository;
         this.nolRepository = nolRepository;
         this.contributionRepository = contributionRepository;
-        this.noolService = noolService;
-        this.contributionService = contributionService;
         this.passwordEncoder = passwordEncoder;
         this.tokenBlacklistService = tokenBlacklistService;
     }
@@ -61,6 +54,7 @@ public class UserService {
         userProfileResponse.setName(user.getName());
         userProfileResponse.setEmail(user.getEmail());
         userProfileResponse.setBio(user.getBio());
+        userProfileResponse.setGravatarUrl(GravatarUtil.getUrl(user.getEmail()));
         userProfileResponse.setCreatedAt(user.getCreatedAt());
 
         List<Nool> threadsCreatedByCurrUser = nolRepository.findByCreatedBy(user);
@@ -123,6 +117,7 @@ public class UserService {
             UserInfo userInfo = new UserInfo();
             userInfo.setId(contribution.getUser().getId());
             userInfo.setName(contribution.getUser().getName());
+            userInfo.setGravatarUrl(GravatarUtil.getUrl(contribution.getUser().getEmail()));
             contributionResponse.setUser(userInfo);
             contributionsOfCurrUserResponse.add(contributionResponse);
         }
@@ -132,37 +127,46 @@ public class UserService {
         return userProfileResponse;
     }
 
-    // ─── LEAVE AALAP (DELETE ACCOUNT) ─────────────────────────────────────────────
+    // ─── LEAVE AALAP (SOFT DELETE) ────────────────────────────────────────────────
+    // We anonymize the user's PII instead of deleting their rows.
+    // Audio stems and threads are intentionally preserved — other collaborators'
+    // master mixes must not be broken when one contributor leaves.
 
-    @Transactional(readOnly = false)
-    public void deleteUserAccount(String password) throws IOException {
+    @Transactional
+    public void deleteUserAccount(String password) {
         User loggedInUser = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         User user = userRepository.findById(loggedInUser.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
 
-        // ── Re-authentication: verify the supplied password before wiping the account ──
+        // ── Re-authentication: verify password before any changes ──────────────
         if (!passwordEncoder.matches(password, user.getPassword())) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Incorrect password");
         }
 
-        // ── Blacklist any outstanding JWTs for this user immediately ──────────────
+        // ── Blacklist outstanding JWTs immediately ─────────────────────────────
         tokenBlacklistService.invalidate(user.getId());
 
-        // 1. Delete all threads created by the user
-        // This leverages NoolService to wipe master files and all stems inside these threads.
-        List<Nool> userThreads = nolRepository.findByCreatedBy(user);
-        for (Nool thread : userThreads) {
-            noolService.deleteNool(thread.getId());
-        }
+        // ── Anonymize PII ──────────────────────────────────────────────────────
+        user.setName("Deleted User");
 
-        // 2. Delete the user's remaining stems (contributions in OTHER people's threads)
-        // This leverages ContributionService to safely delete the Cloudinary files and handle role cleanups.
-        List<Contribution> userContributions = contributionRepository.findByUser(user);
-        for (Contribution contribution : userContributions) {
-            contributionService.deleteContribution(contribution.getId());
-        }
+        // Replace the real email with a unique non-functioning placeholder.
+        // This frees the original address so the person can re-register later.
+        // The domain ".invalid" is RFC-2606 reserved and can never exist.
+        user.setEmail("deleted_" + user.getId() + "@aalap.invalid");
 
-        // 3. Delete the user record itself
-        userRepository.delete(user);
+        user.setBio(null);
+
+        // Overwrite the password hash with a random value so the account
+        // can never be unlocked through any credential-guessing attack.
+        user.setPassword(passwordEncoder.encode(UUID.randomUUID().toString()));
+
+        // Mark as soft-deleted — blocks login and JWT acceptance via isEnabled().
+        user.setDeleted(true);
+
+        userRepository.save(user);
+
+        // ── Threads, contributions, and Cloudinary files are preserved ─────────
+        // Stems belong to the collaborative project, not just the uploader.
+        // Other musicians can still play, download, and build on them.
     }
 }

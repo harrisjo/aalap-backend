@@ -73,7 +73,15 @@ public class JwtFilter extends OncePerRequestFilter {
             return;
         }
 
-        // ── 3. Reject tokens that were invalidated (e.g. after account deletion) ──
+        // ── 3. Reject soft-deleted accounts (persistent DB check) ─────────────
+        // isEnabled() returns false once an account is anonymized.
+        // This persists across server restarts, unlike the in-memory blacklist.
+        if (!user.isEnabled()) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        // ── 4. Reject tokens that were invalidated (e.g. after account deletion) ──
         Date issuedAt = jwtUtil.extractIssuedAt(token);
         if (tokenBlacklistService.isInvalidated(user.getId(), issuedAt)) {
             filterChain.doFilter(request, response);

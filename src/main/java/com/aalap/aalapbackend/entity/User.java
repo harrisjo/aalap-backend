@@ -36,6 +36,15 @@ public class User implements UserDetails {
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
+    /**
+     * Soft-delete flag. When true the account PII has been anonymized and the
+     * user can no longer log in or authenticate via JWT.
+     * Audio contributions and threads are intentionally kept so collaborators'
+     * work is not broken.
+     */
+    @Column(name = "is_deleted", nullable = false)
+    private boolean deleted = false;
+
     @PrePersist
     public void prePersist() {
         this.createdAt = LocalDateTime.now();
@@ -71,6 +80,8 @@ public class User implements UserDetails {
 
     @Override
     public boolean isEnabled() {
-        return true;
+        // A soft-deleted account has its PII anonymized but its audio contributions preserved.
+        // Returning false here blocks login and JWT authentication automatically.
+        return !deleted;
     }
 }

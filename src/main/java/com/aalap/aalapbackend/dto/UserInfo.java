@@ -13,4 +13,5 @@ import lombok.Data;
 public class UserInfo {
     long   id;
     String name;
+    String gravatarUrl;
 }

@@ -18,12 +18,15 @@ public class AuthService {
     UserRepository userRepository;
     PasswordEncoder passwordEncoder;
     JwtUtil jwtUtil;
+    EmailService emailService;
 
     @Autowired
-    public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtUtil jwtUtil) {
+    public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder,
+                       JwtUtil jwtUtil, EmailService emailService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtil = jwtUtil;
+        this.emailService = emailService;
     }
 
     public AuthResponse register(RegisterRequest registerRequest) {
@@ -39,6 +42,9 @@ public class AuthService {
         newUser.setPassword(hashedPassword);
         userRepository.save(newUser);
 
+        // Fire-and-forget welcome email — never blocks registration
+        emailService.sendWelcomeEmail(newUser.getEmail(), newUser.getName());
+
         // Token goes into the HttpOnly cookie (set by AuthController).
         // Response body carries only non-sensitive user info.
         AuthResponse authResponse = new AuthResponse();
@@ -51,9 +57,9 @@ public class AuthService {
 
     public AuthResponse login(LoginRequest loginRequest) {
         User user = userRepository.findByEmail(loginRequest.getEmail()).orElse(null);
-        // Single generic message for both "no such user" and "wrong password" —
-        // prevents email-enumeration attacks.
-        if (user == null || !passwordEncoder.matches(loginRequest.getPassword(), user.getPassword())) {
+        // Single generic message for "no such user", "wrong password", AND "soft-deleted account" —
+        // all three cases return the same 401 to prevent email-enumeration attacks.
+        if (user == null || !user.isEnabled() || !passwordEncoder.matches(loginRequest.getPassword(), user.getPassword())) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials");
         }
         AuthResponse authResponse = new AuthResponse();

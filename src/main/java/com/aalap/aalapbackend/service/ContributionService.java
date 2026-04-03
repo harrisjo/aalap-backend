@@ -9,6 +9,7 @@ import com.aalap.aalapbackend.exception.DuplicateRoleException;
 import com.aalap.aalapbackend.exception.NoolNotFoundException;
 import com.aalap.aalapbackend.repository.ContributionRepository;
 import com.aalap.aalapbackend.repository.NoolRepository;
+import com.aalap.aalapbackend.util.GravatarUtil;
 import com.cloudinary.Cloudinary;
 import com.cloudinary.utils.ObjectUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,14 +45,17 @@ public class ContributionService {
     private final ContributionRepository contributionRepository;
     private final NoolRepository noolRepository;
     private final Cloudinary cloudinary;
+    private final EmailService emailService;
 
     @Autowired
     public ContributionService(ContributionRepository contributionRepository,
                                NoolRepository noolRepository,
-                               Cloudinary cloudinary) {
+                               Cloudinary cloudinary,
+                               EmailService emailService) {
         this.contributionRepository = contributionRepository;
         this.noolRepository = noolRepository;
         this.cloudinary = cloudinary;
+        this.emailService = emailService;
     }
 
     public ContributionResponse addContribution(long noolId, String role, String description,
@@ -103,6 +107,20 @@ public class ContributionService {
         contribution.setFileType(resourceType);
 
         Contribution saved = contributionRepository.save(contribution);
+
+        // ── Notify thread owner (fire-and-forget) ─────────────────────────────
+        // Don't email if the contributor IS the thread owner.
+        User threadOwner = nool.getCreatedBy();
+        if (threadOwner.getId() != user.getId()) {
+            emailService.sendContributionNotification(
+                    threadOwner.getEmail(),
+                    threadOwner.getName(),
+                    nool.getTitle(),
+                    user.getName(),
+                    role,
+                    nool.getId());
+        }
+
         return toResponse(saved);
     }
 
@@ -166,6 +184,7 @@ public class ContributionService {
         UserInfo userInfo = new UserInfo();
         userInfo.setId(c.getUser().getId());
         userInfo.setName(c.getUser().getName());
+        userInfo.setGravatarUrl(GravatarUtil.getUrl(c.getUser().getEmail()));
         // email intentionally omitted — see UserInfo.java
 
         ContributionResponse response = new ContributionResponse();

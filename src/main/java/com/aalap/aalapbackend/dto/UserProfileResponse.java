@@ -11,6 +11,7 @@ public class UserProfileResponse {
     String name;
     String email;
     String bio;
+    String gravatarUrl;
     LocalDateTime createdAt;
     List<ThreadSummary> threadsCreated;
     List<ContributionResponse>  contributions;

@@ -7,6 +7,7 @@ import com.aalap.aalapbackend.entity.User;
 import com.aalap.aalapbackend.exception.NoolNotFoundException;
 import com.aalap.aalapbackend.repository.ContributionRepository;
 import com.aalap.aalapbackend.repository.NoolRepository;
+import com.aalap.aalapbackend.util.GravatarUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -59,6 +60,7 @@ public class NoolService {
         UserInfo userInfo = new UserInfo();
         userInfo.setId(user.getId());
         userInfo.setName(user.getName());
+        userInfo.setGravatarUrl(GravatarUtil.getUrl(user.getEmail()));
 
         NoolResponse noolResponse = new NoolResponse();
         noolResponse.setId(createdNool.getId());
@@ -79,6 +81,7 @@ public class NoolService {
         UserInfo noolUserInfo = new UserInfo();
         noolUserInfo.setId(nool.getCreatedBy().getId());
         noolUserInfo.setName(nool.getCreatedBy().getName());
+        noolUserInfo.setGravatarUrl(GravatarUtil.getUrl(nool.getCreatedBy().getEmail()));
 
         List<Contribution> contributions = contributionRepository.findByNool(nool);
         List<ContributionResponse> contributionResponses = new ArrayList<>();
@@ -95,6 +98,7 @@ public class NoolService {
             UserInfo userInfo = new UserInfo();
             userInfo.setId(contribution.getUser().getId());
             userInfo.setName(contribution.getUser().getName());
+            userInfo.setGravatarUrl(GravatarUtil.getUrl(contribution.getUser().getEmail()));
             cr.setUser(userInfo);
 
             contributionResponses.add(cr);
@@ -145,6 +149,7 @@ public class NoolService {
             UserInfo noolUserInfo = new UserInfo();
             noolUserInfo.setId(nool.getCreatedBy().getId());
             noolUserInfo.setName(nool.getCreatedBy().getName());
+            noolUserInfo.setGravatarUrl(GravatarUtil.getUrl(nool.getCreatedBy().getEmail()));
             threadSummary.setCreatedBy(noolUserInfo);
 
             Map<String, List<String>> rolesWithContributors = new LinkedHashMap<>();
@@ -189,6 +194,7 @@ public class NoolService {
         UserInfo userInfo = new UserInfo();
         userInfo.setId(updatedNool.getCreatedBy().getId());
         userInfo.setName(updatedNool.getCreatedBy().getName());
+        userInfo.setGravatarUrl(GravatarUtil.getUrl(updatedNool.getCreatedBy().getEmail()));
 
         NoolResponse response = new NoolResponse();
         response.setId(updatedNool.getId());
