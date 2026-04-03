@@ -1,10 +1,13 @@
 package com.aalap.aalapbackend.controller;
 
+import com.aalap.aalapbackend.dto.DeleteAccountRequest;
 import com.aalap.aalapbackend.dto.UserProfileResponse;
-import com.aalap.aalapbackend.security.JwtUtil;
+import com.aalap.aalapbackend.entity.User;
 import com.aalap.aalapbackend.service.UserService;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
@@ -13,12 +16,10 @@ import java.io.IOException;
 @RequestMapping("/api/users")
 public class UserController {
     UserService userService;
-    JwtUtil jwtUtil;
 
     @Autowired
-    public UserController(UserService userService, JwtUtil jwtUtil) {
+    public UserController(UserService userService) {
         this.userService = userService;
-        this.jwtUtil = jwtUtil;
     }
 
     @GetMapping("/{userId}")
@@ -26,22 +27,18 @@ public class UserController {
         return userService.getUserProfile(userId);
     }
 
-    // NEW endpoint for viewing MY profile (Your optimized way!)
     @GetMapping("/me")
-    public UserProfileResponse getMyProfile(@RequestHeader("Authorization") String authHeader) {
-        // 1. Strip the "Bearer " prefix from the header to get the raw token
-        String token = authHeader.substring(7);
-
-        // 2. Read the ID directly off the token
-        Long userId = jwtUtil.extractUserId(token);
-
-        // 3. Hand it directly to the Sound Engineer! No email lookups required.
-        return userService.getUserProfile(userId);
+    public UserProfileResponse getMyProfile(@AuthenticationPrincipal User user) {
+        // JwtFilter already validated the token and stored the User in the SecurityContext —
+        // no need to re-parse the JWT here.
+        return userService.getUserProfile(user.getId());
     }
 
     @DeleteMapping("/me")
-    public ResponseEntity<Void> leaveAalap() throws IOException {
-        userService.deleteUserAccount();
+    public ResponseEntity<Void> leaveAalap(
+            @RequestBody @Valid DeleteAccountRequest request) throws IOException {
+        // Password is verified inside the service before any data is deleted.
+        userService.deleteUserAccount(request.getPassword());
         return ResponseEntity.noContent().build();
     }
 }

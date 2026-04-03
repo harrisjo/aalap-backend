@@ -18,14 +18,14 @@ spring:
     hibernate:
       # Defaults to validate for production safety, can be overridden to 'update' locally
       ddl-auto: ${DDL_AUTO:validate}
-    show-sql: true
+    show-sql: false   # Never log raw SQL in production — set SHOW_SQL=true env var locally if needed
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQLDialect
 
 jwt:
-  # Looks for a production secret, falls back to your local dev string
-  secret: ${JWT_SECRET:7f3b9c2e1d4a8f6b0e5c3a9d2f7b1e4c8a3f6d9b2e5c1a4f7b0e3c6a9d2f5b8e1c4a7f0b3d6e9c2a5f8b1e4d7a0c3f6b9e2d5a8c1f4b7e0d3a6f9c2b5e8a1d4f7b0c3e6a9d2f5b8c1e4a7f0b3d6e9}
+  # No fallback — app will fail to start if JWT_SECRET env var is not set
+  secret: ${JWT_SECRET}
   expiration: 3600000
 
 logging:

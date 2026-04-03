@@ -15,4 +15,5 @@ public class ThreadSummary {
     Date createdAt;
     int contributionCount;
     Map<String, List<String>> rolesWithContributors;
+    List<Long> contributorIds;   // unique contributor user IDs — used for accurate dedup on the client
 }

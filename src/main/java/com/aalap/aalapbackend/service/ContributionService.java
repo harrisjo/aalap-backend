@@ -22,10 +22,24 @@ import org.springframework.web.server.ResponseStatusException;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 @Transactional
 public class ContributionService {
+
+    // ─── Allowed MIME types for contribution files ────────────────────────────
+    // Audio types for instruments, vocals, production stems.
+    // Text types for lyricists uploading lyrics/sheet notation.
+    // No executables, archives, scripts, or binary formats permitted.
+    private static final Set<String> ALLOWED_CONTRIBUTION_TYPES = Set.of(
+            // Audio
+            "audio/mpeg", "audio/wav", "audio/x-wav", "audio/ogg",
+            "audio/flac", "audio/x-flac", "audio/aac", "audio/mp4",
+            "audio/webm", "audio/3gpp",
+            // Text (lyrics, sheet notation, tabs)
+            "text/plain"
+    );
 
     private final ContributionRepository contributionRepository;
     private final NoolRepository noolRepository;
@@ -46,7 +60,25 @@ public class ContributionService {
         Nool nool = noolRepository.findById(noolId)
                 .orElseThrow(() -> new NoolNotFoundException("Thread not found!"));
 
-        if (role != null && role.trim().equalsIgnoreCase("Composer")) {
+        // ── Input length limits ───────────────────────────────────────────────
+        if (role == null || role.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Role is required");
+        }
+        if (role.length() > 100) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Role must be 100 characters or less");
+        }
+        if (description != null && description.length() > 2000) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Description must be 2000 characters or less");
+        }
+
+        // ── File type validation ──────────────────────────────────────────────
+        String contentType = file.getContentType();
+        if (contentType == null || !ALLOWED_CONTRIBUTION_TYPES.contains(contentType)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Only audio files (MP3, WAV, FLAC, etc.) or text files are accepted for contributions");
+        }
+
+        if (role.trim().equalsIgnoreCase("Composer")) {
             List<Contribution> existing = contributionRepository.findByNool(nool);
             for (Contribution c : existing) {
                 if (c.getRole() != null && c.getRole().trim().equalsIgnoreCase("Composer")) {
@@ -58,10 +90,9 @@ public class ContributionService {
             noolRepository.save(nool);
         }
 
-        // Upload to Cloudinary
         Map uploadResult = cloudinary.uploader().upload(file.getBytes(), ObjectUtils.asMap("resource_type", "auto"));
         String cloudUrl = uploadResult.get("secure_url").toString();
-        String resourceType = uploadResult.get("resource_type").toString(); // Get Cloudinary's type
+        String resourceType = uploadResult.get("resource_type").toString();
 
         Contribution contribution = new Contribution();
         contribution.setNool(nool);
@@ -69,7 +100,7 @@ public class ContributionService {
         contribution.setUser(user);
         contribution.setRole(role);
         contribution.setFilePath(cloudUrl);
-        contribution.setFileType(resourceType); // Save "video" or "raw"
+        contribution.setFileType(resourceType);
 
         Contribution saved = contributionRepository.save(contribution);
         return toResponse(saved);
@@ -86,7 +117,6 @@ public class ContributionService {
 
         if (contribution.getFilePath() != null && !contribution.getFilePath().isBlank()) {
             String publicId = extractPublicId(contribution.getFilePath());
-            // Use the type stored in DB for safe deletion
             String rType = contribution.getFileType() != null ? contribution.getFileType() : "auto";
             cloudinary.uploader().destroy(publicId, ObjectUtils.asMap("resource_type", rType));
         }
@@ -103,14 +133,19 @@ public class ContributionService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You can only edit your own contributions");
         }
 
-        // Destroy old file
+        // ── File type validation ──────────────────────────────────────────────
+        String contentType = newFile.getContentType();
+        if (contentType == null || !ALLOWED_CONTRIBUTION_TYPES.contains(contentType)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Only audio files (MP3, WAV, FLAC, etc.) or text files are accepted for contributions");
+        }
+
         if (contribution.getFilePath() != null && !contribution.getFilePath().isBlank()) {
             String oldPublicId = extractPublicId(contribution.getFilePath());
             String oldRType = contribution.getFileType() != null ? contribution.getFileType() : "auto";
             cloudinary.uploader().destroy(oldPublicId, ObjectUtils.asMap("resource_type", oldRType));
         }
 
-        // Upload new and get new type
         Map uploadResult = cloudinary.uploader().upload(newFile.getBytes(), ObjectUtils.asMap("resource_type", "auto"));
         contribution.setFilePath(uploadResult.get("secure_url").toString());
         contribution.setFileType(uploadResult.get("resource_type").toString());
@@ -131,7 +166,7 @@ public class ContributionService {
         UserInfo userInfo = new UserInfo();
         userInfo.setId(c.getUser().getId());
         userInfo.setName(c.getUser().getName());
-        userInfo.setEmail(c.getUser().getEmail());
+        // email intentionally omitted — see UserInfo.java
 
         ContributionResponse response = new ContributionResponse();
         response.setId(c.getId());
@@ -139,9 +174,10 @@ public class ContributionService {
         response.setRole(c.getRole());
         response.setDescription(c.getDescription());
         response.setFilePath(c.getFilePath());
-        response.setFileType(c.getFileType()); // Map to DTO
+        response.setFileType(c.getFileType());
         response.setNoolId(c.getNool().getId());
         response.setCreatedAt(c.getCreatedAt());
         return response;
     }
 }
+

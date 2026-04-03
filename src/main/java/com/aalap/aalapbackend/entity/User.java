@@ -3,6 +3,7 @@ package com.aalap.aalapbackend.entity;
 import jakarta.persistence.*;
 import lombok.Data;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
 import java.time.LocalDateTime;
@@ -42,7 +43,10 @@ public class User implements UserDetails {
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return List.of();
+        // RBAC foundation: all authenticated users carry ROLE_USER.
+        // When admin functionality is needed, add a `role` VARCHAR column to
+        // the `users` table and read the persisted role here instead.
+        return List.of(new SimpleGrantedAuthority("ROLE_USER"));
     }
 
     @Override

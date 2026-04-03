@@ -7,7 +7,12 @@ import com.aalap.aalapbackend.entity.User;
 import com.aalap.aalapbackend.exception.NoolNotFoundException;
 import com.aalap.aalapbackend.repository.ContributionRepository;
 import com.aalap.aalapbackend.repository.NoolRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -20,9 +25,18 @@ import org.springframework.web.server.ResponseStatusException;
 import java.io.IOException;
 import java.util.*;
 
+@Slf4j
 @Service
 @Transactional
 public class NoolService {
+
+    // ─── Allowed MIME types for audio uploads ─────────────────────────────────
+    private static final Set<String> ALLOWED_AUDIO_TYPES = Set.of(
+            "audio/mpeg", "audio/wav", "audio/x-wav", "audio/ogg",
+            "audio/flac", "audio/x-flac", "audio/aac", "audio/mp4",
+            "audio/webm", "audio/3gpp"
+    );
+
     NoolRepository noolRepository;
     ContributionRepository contributionRepository;
     Cloudinary cloudinary;
@@ -45,7 +59,6 @@ public class NoolService {
         UserInfo userInfo = new UserInfo();
         userInfo.setId(user.getId());
         userInfo.setName(user.getName());
-        userInfo.setEmail(user.getEmail());
 
         NoolResponse noolResponse = new NoolResponse();
         noolResponse.setId(createdNool.getId());
@@ -66,7 +79,6 @@ public class NoolService {
         UserInfo noolUserInfo = new UserInfo();
         noolUserInfo.setId(nool.getCreatedBy().getId());
         noolUserInfo.setName(nool.getCreatedBy().getName());
-        noolUserInfo.setEmail(nool.getCreatedBy().getEmail());
 
         List<Contribution> contributions = contributionRepository.findByNool(nool);
         List<ContributionResponse> contributionResponses = new ArrayList<>();
@@ -83,7 +95,6 @@ public class NoolService {
             UserInfo userInfo = new UserInfo();
             userInfo.setId(contribution.getUser().getId());
             userInfo.setName(contribution.getUser().getName());
-            userInfo.setEmail(contribution.getUser().getEmail());
             cr.setUser(userInfo);
 
             contributionResponses.add(cr);
@@ -102,59 +113,71 @@ public class NoolService {
         return threadResponse;
     }
 
-    public List<ThreadSummary> getAllNools() {
-        List<Nool> nools = noolRepository.findAll();
+    public Page<ThreadSummary> getAllNools(int page, int size) {
+        PageRequest pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Page<Nool> noolPage  = noolRepository.findAll(pageable);
+        List<Nool> nools     = noolPage.getContent();
+
+        if (nools.isEmpty()) {
+            return new PageImpl<>(new ArrayList<>(), pageable, 0);
+        }
 
         List<Contribution> allContributions = contributionRepository.findByNoolIn(nools);
         Map<Long, List<Contribution>> contributionsByNoolId = new HashMap<>();
-        for(Contribution c : allContributions) {
-            Long noolId = c.getNool().getId();
-            if(!contributionsByNoolId.containsKey(noolId)) {
-                contributionsByNoolId.put(noolId, new ArrayList<>());
-            }
-            contributionsByNoolId.get(noolId).add(c);
+        for (Contribution c : allContributions) {
+            contributionsByNoolId
+                .computeIfAbsent(c.getNool().getId(), k -> new ArrayList<>())
+                .add(c);
         }
 
         List<ThreadSummary> threadSummaries = new ArrayList<>();
-        for(Nool nool : nools) {
-            ThreadSummary threadSummary = new ThreadSummary();
-            List<Contribution> contributions = contributionsByNoolId
+        for (Nool nool : nools) {
+            List<Contribution> contribs = contributionsByNoolId
                     .getOrDefault(nool.getId(), new ArrayList<>());
 
+            ThreadSummary threadSummary = new ThreadSummary();
             threadSummary.setId(nool.getId());
             threadSummary.setTitle(nool.getTitle());
             threadSummary.setDescription(nool.getDescription());
             threadSummary.setCreatedAt(nool.getCreatedAt());
-            threadSummary.setContributionCount(contributions.size());
+            threadSummary.setContributionCount(contribs.size());
 
             UserInfo noolUserInfo = new UserInfo();
             noolUserInfo.setId(nool.getCreatedBy().getId());
             noolUserInfo.setName(nool.getCreatedBy().getName());
-            noolUserInfo.setEmail(nool.getCreatedBy().getEmail());
             threadSummary.setCreatedBy(noolUserInfo);
 
             Map<String, List<String>> rolesWithContributors = new LinkedHashMap<>();
-            for(Contribution contribution : contributions) {
-                String role = contribution.getRole();
-                String name = contribution.getUser().getName();
-                if(rolesWithContributors.containsKey(role)) {
-                    rolesWithContributors.get(role).add(name);
-                } else {
-                    List<String> names = new ArrayList<>();
-                    names.add(name);
-                    rolesWithContributors.put(role, names);
-                }
+            Set<Long> contributorIds = new LinkedHashSet<>();
+            for (Contribution contribution : contribs) {
+                rolesWithContributors
+                    .computeIfAbsent(contribution.getRole(), k -> new ArrayList<>())
+                    .add(contribution.getUser().getName());
+                contributorIds.add(contribution.getUser().getId());
             }
             threadSummary.setRolesWithContributors(rolesWithContributors);
+            threadSummary.setContributorIds(new ArrayList<>(contributorIds));
             threadSummaries.add(threadSummary);
         }
-        return threadSummaries;
+        return new PageImpl<>(threadSummaries, pageable, noolPage.getTotalElements());
     }
 
     public NoolResponse uploadMasterAudio(Long noolId, MultipartFile file) throws IOException {
-        Nool nool = noolRepository.findById(noolId).orElse(null);
-        if(nool == null) {
-            throw new NoolNotFoundException("Thread does not exist");
+        User loggedInUser = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+
+        Nool nool = noolRepository.findById(noolId)
+                .orElseThrow(() -> new NoolNotFoundException("Thread does not exist"));
+
+        // Only the creator of the thread can upload the master mix
+        if ((long) nool.getCreatedBy().getId() != (long) loggedInUser.getId()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the creator can upload the master mix");
+        }
+
+        // ── File type validation ────────────────────────────────────────────────
+        String contentType = file.getContentType();
+        if (contentType == null || !ALLOWED_AUDIO_TYPES.contains(contentType)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Only audio files are accepted for the master mix");
         }
 
         Map uploadResult = cloudinary.uploader().upload(file.getBytes(), ObjectUtils.asMap("resource_type", "auto"));
@@ -166,7 +189,6 @@ public class NoolService {
         UserInfo userInfo = new UserInfo();
         userInfo.setId(updatedNool.getCreatedBy().getId());
         userInfo.setName(updatedNool.getCreatedBy().getName());
-        userInfo.setEmail(updatedNool.getCreatedBy().getEmail());
 
         NoolResponse response = new NoolResponse();
         response.setId(updatedNool.getId());
@@ -179,10 +201,7 @@ public class NoolService {
         return response;
     }
 
-    // ─── DELETE THREAD ────────────────────────────────────────────────────────
-    // Only the creator of the thread can delete it.
-    // Deletes all contribution files from Cloudinary, the master mix from
-    // Cloudinary, all contribution rows from DB, then the thread itself.
+    // ─── DELETE THREAD ─────────────────────────────────────────────────────────
 
     public void deleteNool(Long noolId) throws IOException {
         User loggedInUser = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
@@ -195,40 +214,35 @@ public class NoolService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the creator can delete this thread");
         }
 
-        // 1. Delete all contribution files from Cloudinary
         List<Contribution> contributions = contributionRepository.findByNool(nool);
         for (Contribution contribution : contributions) {
             if (contribution.getFilePath() != null && !contribution.getFilePath().isBlank()) {
                 try {
-                    String publicId = extractPublicId(contribution.getFilePath());
+                    String publicId    = extractPublicId(contribution.getFilePath());
                     String resourceType = extractResourceType(contribution.getFilePath());
                     cloudinary.uploader().destroy(publicId, ObjectUtils.asMap("resource_type", resourceType));
                 } catch (Exception e) {
-                    // Log but don't block deletion if Cloudinary removal fails
-                    System.err.println("Could not delete contribution file from Cloudinary: " + e.getMessage());
+                    log.warn("Could not delete contribution file from Cloudinary: {}", e.getMessage());
                 }
             }
         }
 
-        // 2. Delete all contributions from DB
         contributionRepository.deleteAll(contributions);
 
-        // 3. Delete master mix from Cloudinary if it exists
         if (nool.getMasterFilePath() != null && !nool.getMasterFilePath().isBlank()) {
             try {
-                String publicId = extractPublicId(nool.getMasterFilePath());
+                String publicId    = extractPublicId(nool.getMasterFilePath());
                 String resourceType = extractResourceType(nool.getMasterFilePath());
                 cloudinary.uploader().destroy(publicId, ObjectUtils.asMap("resource_type", resourceType));
             } catch (Exception e) {
-                System.err.println("Could not delete master file from Cloudinary: " + e.getMessage());
+                log.warn("Could not delete master file from Cloudinary: {}", e.getMessage());
             }
         }
 
-        // 4. Delete the thread from DB
         noolRepository.delete(nool);
     }
 
-    // ─── HELPERS ─────────────────────────────────────────────────────────────
+    // ─── HELPERS ───────────────────────────────────────────────────────────────
 
     private String extractResourceType(String cloudUrl) {
         if (cloudUrl.contains("/video/")) return "video";
@@ -248,3 +262,4 @@ public class NoolService {
         return afterUpload;
     }
 }
+

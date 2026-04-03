@@ -8,6 +8,7 @@ import com.aalap.aalapbackend.dto.ThreadSummary;
 import com.aalap.aalapbackend.service.NoolService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -15,7 +16,6 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.http.MediaType;
 import java.io.IOException;
 
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/threads")
@@ -28,6 +28,7 @@ public class NoolController {
     }
 
     @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
     public NoolResponse createNool(@Valid @RequestBody NoolRequest noolRequest) {
         return noolService.createNool(noolRequest);
     }
@@ -38,8 +39,10 @@ public class NoolController {
     }
 
     @GetMapping
-    public List<ThreadSummary> getAllNools() {
-        return noolService.getAllNools();
+    public Page<ThreadSummary> getAllNools(
+            @RequestParam(defaultValue = "0")  int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return noolService.getAllNools(page, size);
     }
 
     @PostMapping(value = "/{noolId}/master", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -48,7 +51,7 @@ public class NoolController {
             @RequestParam("file") MultipartFile file) {
         try {
             NoolResponse response = noolService.uploadMasterAudio(noolId, file);
-            return new ResponseEntity<>(response, HttpStatus.OK);
+            return ResponseEntity.status(HttpStatus.CREATED).body(response);
         } catch (IOException e) {
             return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
         }

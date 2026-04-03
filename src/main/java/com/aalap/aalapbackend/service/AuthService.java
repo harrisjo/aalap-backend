@@ -5,13 +5,13 @@ import com.aalap.aalapbackend.dto.LoginRequest;
 import com.aalap.aalapbackend.dto.RegisterRequest;
 import com.aalap.aalapbackend.entity.User;
 import com.aalap.aalapbackend.exception.EmailAlreadyExistsException;
-import com.aalap.aalapbackend.exception.NullUserException;
-import com.aalap.aalapbackend.exception.WrongPasswordException;
 import com.aalap.aalapbackend.repository.UserRepository;
 import com.aalap.aalapbackend.security.JwtUtil;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class AuthService {
@@ -39,22 +39,28 @@ public class AuthService {
         newUser.setPassword(hashedPassword);
         userRepository.save(newUser);
 
-        String token = jwtUtil.generateToken(newUser);
+        // Token goes into the HttpOnly cookie (set by AuthController).
+        // Response body carries only non-sensitive user info.
         AuthResponse authResponse = new AuthResponse();
-        authResponse.setToken(token);
+        authResponse.setToken(jwtUtil.generateToken(newUser));
+        authResponse.setUserId(newUser.getId());
+        authResponse.setName(newUser.getName());
+        authResponse.setEmail(newUser.getEmail());
         return authResponse;
     }
 
     public AuthResponse login(LoginRequest loginRequest) {
         User user = userRepository.findByEmail(loginRequest.getEmail()).orElse(null);
-        if(user == null){
-            throw new NullUserException("Invalid email - User not found with this email!");
-        } else if(!passwordEncoder.matches(loginRequest.getPassword(), user.getPassword())){
-            throw new WrongPasswordException("Invalid password - Try again!");
+        // Single generic message for both "no such user" and "wrong password" —
+        // prevents email-enumeration attacks.
+        if (user == null || !passwordEncoder.matches(loginRequest.getPassword(), user.getPassword())) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials");
         }
-        String token = jwtUtil.generateToken(user);
         AuthResponse authResponse = new AuthResponse();
-        authResponse.setToken(token);
+        authResponse.setToken(jwtUtil.generateToken(user));
+        authResponse.setUserId(user.getId());
+        authResponse.setName(user.getName());
+        authResponse.setEmail(user.getEmail());
         return authResponse;
     }
 }

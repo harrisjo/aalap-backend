@@ -1,106 +1,80 @@
 package com.aalap.aalapbackend.exception;
 
 import com.aalap.aalapbackend.dto.ErrorResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 
+@Slf4j
 @ControllerAdvice
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(EmailAlreadyExistsException.class)
     public ResponseEntity<ErrorResponse> handleEmailAlreadyExists(EmailAlreadyExistsException e) {
-        ErrorResponse error = new ErrorResponse(
-                LocalDateTime.now(),
-                HttpStatus.BAD_REQUEST.value(),
-                "Bad Request",
-                e.getMessage()
-        );
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+        // Message is safe to surface: "Email already registered."
+        return build(HttpStatus.BAD_REQUEST, "Bad Request", e.getMessage());
     }
 
     @ExceptionHandler(NullUserException.class)
     public ResponseEntity<ErrorResponse> handleNullUser(NullUserException e) {
-        ErrorResponse error = new ErrorResponse(
-                LocalDateTime.now(),
-                HttpStatus.NOT_FOUND.value(),
-                "Not Found",
-                e.getMessage()
-        );
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
+        return build(HttpStatus.NOT_FOUND, "Not Found", e.getMessage());
     }
 
     @ExceptionHandler(WrongPasswordException.class)
     public ResponseEntity<ErrorResponse> handleWrongPassword(WrongPasswordException e) {
-        ErrorResponse error = new ErrorResponse(
-                LocalDateTime.now(),
-                HttpStatus.UNAUTHORIZED.value(),
-                "Unauthorized",
-                e.getMessage()
-        );
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(error);
+        return build(HttpStatus.UNAUTHORIZED, "Unauthorized", e.getMessage());
     }
 
     @ExceptionHandler(NoolNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleNoolNotFound(NoolNotFoundException e) {
-        ErrorResponse error = new ErrorResponse(
-                LocalDateTime.now(),
-                HttpStatus.NOT_FOUND.value(),
-                "Not Found",
-                e.getMessage()
-        );
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
+        return build(HttpStatus.NOT_FOUND, "Not Found", e.getMessage());
     }
 
     @ExceptionHandler(DuplicateRoleException.class)
     public ResponseEntity<ErrorResponse> handleDuplicateRole(DuplicateRoleException e) {
-        ErrorResponse error = new ErrorResponse(
-                LocalDateTime.now(),
-                HttpStatus.BAD_REQUEST.value(),
-                "Bad Request",
-                e.getMessage()
-        );
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+        return build(HttpStatus.BAD_REQUEST, "Bad Request", e.getMessage());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidationExceptions(MethodArgumentNotValidException ex) {
         String message = ex.getBindingResult().getFieldErrors().stream()
-                .map(error -> error.getField() + ": " + error.getDefaultMessage())
+                .map(err -> err.getField() + ": " + err.getDefaultMessage())
                 .findFirst()
                 .orElse("Validation failed");
-        ErrorResponse error = new ErrorResponse(
-                LocalDateTime.now(),
-                HttpStatus.BAD_REQUEST.value(),
-                "Validation Failed",
-                message
-        );
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+        return build(HttpStatus.BAD_REQUEST, "Validation Failed", message);
     }
 
-    // ✅ FIXED: Now logs the real exception so you can see what's actually
-    // failing in Render's logs (Dashboard → your service → Logs).
-    // Previously this swallowed all errors silently, making debugging impossible.
+    /** ResponseStatusException (thrown by services for 400 / 403 / 404 etc.) */
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ErrorResponse> handleResponseStatus(ResponseStatusException e) {
+        // reason() is the developer-supplied, safe-to-expose message
+        String reason = e.getReason() != null ? e.getReason() : e.getStatusCode().toString();
+        return build(HttpStatus.valueOf(e.getStatusCode().value()), "Request Error", reason);
+    }
+
+    /**
+     * Catch-all for any unhandled exception.
+     *
+     * The full stack trace is logged SERVER-SIDE (visible in Render/Docker logs)
+     * but a generic message is returned to the client so no internal details leak.
+     */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGenericException(Exception e) {
+        log.error("Unhandled exception [{}]: {}", e.getClass().getName(), e.getMessage(), e);
+        return build(HttpStatus.INTERNAL_SERVER_ERROR, "Internal Server Error",
+                "An unexpected error occurred. Please try again later.");
+    }
 
-        // This prints the full stack trace to Render's log console
-        System.err.println("=== UNHANDLED EXCEPTION ===");
-        System.err.println("Type   : " + e.getClass().getName());
-        System.err.println("Message: " + e.getMessage());
-        e.printStackTrace();
-
-        ErrorResponse error = new ErrorResponse(
-                LocalDateTime.now(),
-                HttpStatus.INTERNAL_SERVER_ERROR.value(),
-                "Internal Server Error",
-                // ✅ Return the real message so the frontend can also show it
-                e.getMessage() != null ? e.getMessage() : "An unexpected error occurred"
+    // ─── Helper ─────────────────────────────────────────────────────────────────
+    private ResponseEntity<ErrorResponse> build(HttpStatus status, String error, String message) {
+        return ResponseEntity.status(status).body(
+                new ErrorResponse(LocalDateTime.now(), status.value(), error, message)
         );
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
     }
 }

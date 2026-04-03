@@ -11,18 +11,17 @@ import com.aalap.aalapbackend.exception.NullUserException;
 import com.aalap.aalapbackend.repository.ContributionRepository;
 import com.aalap.aalapbackend.repository.NoolRepository;
 import com.aalap.aalapbackend.repository.UserRepository;
+import com.aalap.aalapbackend.security.TokenBlacklistService;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Service
 @Transactional(readOnly = true)
@@ -32,17 +31,23 @@ public class UserService {
     private final ContributionRepository contributionRepository;
     private final NoolService noolService;
     private final ContributionService contributionService;
+    private final PasswordEncoder passwordEncoder;
+    private final TokenBlacklistService tokenBlacklistService;
 
     public UserService(UserRepository userRepository,
                        NoolRepository nolRepository,
                        ContributionRepository contributionRepository,
                        @Lazy NoolService noolService,
-                       @Lazy ContributionService contributionService) {
+                       @Lazy ContributionService contributionService,
+                       PasswordEncoder passwordEncoder,
+                       TokenBlacklistService tokenBlacklistService) {
         this.userRepository = userRepository;
         this.nolRepository = nolRepository;
         this.contributionRepository = contributionRepository;
         this.noolService = noolService;
         this.contributionService = contributionService;
+        this.passwordEncoder = passwordEncoder;
+        this.tokenBlacklistService = tokenBlacklistService;
     }
 
     public UserProfileResponse getUserProfile(long userId) {
@@ -61,11 +66,25 @@ public class UserService {
         List<Nool> threadsCreatedByCurrUser = nolRepository.findByCreatedBy(user);
         List<Contribution> contributionsOfCurrUser = contributionRepository.findByUser(user);
 
+        // ── Batch-load all contributions for the user's threads in ONE query ──────
+        // Then group by nool ID so the loop below is pure in-memory work (no N+1).
+        Map<Long, List<Contribution>> contributionsByNoolId = new HashMap<>();
+        if (!threadsCreatedByCurrUser.isEmpty()) {
+            List<Contribution> threadContributions = contributionRepository.findByNoolIn(threadsCreatedByCurrUser);
+            for (Contribution c : threadContributions) {
+                contributionsByNoolId
+                    .computeIfAbsent(c.getNool().getId(), k -> new ArrayList<>())
+                    .add(c);
+            }
+        }
+
         List<ThreadSummary> threadsOfCurrUser = new ArrayList<>();
         List<ContributionResponse> contributionsOfCurrUserResponse = new ArrayList<>();
 
         for (Nool nool : threadsCreatedByCurrUser) {
-            List<Contribution> noolContributions = contributionRepository.findByNool(nool);
+            List<Contribution> noolContributions = contributionsByNoolId
+                    .getOrDefault(nool.getId(), new ArrayList<>());
+
             ThreadSummary threadSummary = new ThreadSummary();
             threadSummary.setId(nool.getId());
             threadSummary.setTitle(nool.getTitle());
@@ -76,23 +95,18 @@ public class UserService {
             UserInfo userInfo = new UserInfo();
             userInfo.setId(nool.getCreatedBy().getId());
             userInfo.setName(nool.getCreatedBy().getName());
-            userInfo.setEmail(nool.getCreatedBy().getEmail());
             threadSummary.setCreatedBy(userInfo);
 
             Map<String, List<String>> rolesWithContributors = new LinkedHashMap<>();
-
+            Set<Long> contributorIds = new LinkedHashSet<>();
             for (Contribution contribution : noolContributions) {
-                String role = contribution.getRole();
-                String name = contribution.getUser().getName();
-                if (rolesWithContributors.containsKey(role)) {
-                    rolesWithContributors.get(role).add(name);
-                } else {
-                    List<String> names = new ArrayList<>();
-                    names.add(name);
-                    rolesWithContributors.put(role, names);
-                }
+                rolesWithContributors
+                    .computeIfAbsent(contribution.getRole(), k -> new ArrayList<>())
+                    .add(contribution.getUser().getName());
+                contributorIds.add(contribution.getUser().getId());
             }
             threadSummary.setRolesWithContributors(rolesWithContributors);
+            threadSummary.setContributorIds(new ArrayList<>(contributorIds));
             threadsOfCurrUser.add(threadSummary);
         }
 
@@ -109,7 +123,6 @@ public class UserService {
             UserInfo userInfo = new UserInfo();
             userInfo.setId(contribution.getUser().getId());
             userInfo.setName(contribution.getUser().getName());
-            userInfo.setEmail(contribution.getUser().getEmail());
             contributionResponse.setUser(userInfo);
             contributionsOfCurrUserResponse.add(contributionResponse);
         }
@@ -122,10 +135,18 @@ public class UserService {
     // ─── LEAVE AALAP (DELETE ACCOUNT) ─────────────────────────────────────────────
 
     @Transactional(readOnly = false)
-    public void deleteUserAccount() throws IOException {
+    public void deleteUserAccount(String password) throws IOException {
         User loggedInUser = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         User user = userRepository.findById(loggedInUser.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+
+        // ── Re-authentication: verify the supplied password before wiping the account ──
+        if (!passwordEncoder.matches(password, user.getPassword())) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Incorrect password");
+        }
+
+        // ── Blacklist any outstanding JWTs for this user immediately ──────────────
+        tokenBlacklistService.invalidate(user.getId());
 
         // 1. Delete all threads created by the user
         // This leverages NoolService to wipe master files and all stems inside these threads.

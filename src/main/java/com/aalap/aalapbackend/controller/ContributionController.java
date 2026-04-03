@@ -2,9 +2,11 @@ package com.aalap.aalapbackend.controller;
 
 import com.aalap.aalapbackend.dto.ContributionResponse;
 import com.aalap.aalapbackend.service.ContributionService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -22,6 +24,7 @@ public class ContributionController {
     // ─── ADD CONTRIBUTION ────────────────────────────────────────────────────────
 
     @PostMapping(value = "/{threadId}/contributions", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
     public ContributionResponse createContribution(
             @PathVariable long threadId,
             @RequestParam String role,
