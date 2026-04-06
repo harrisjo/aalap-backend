@@ -61,6 +61,7 @@ public class NoolService {
         userInfo.setId(user.getId());
         userInfo.setName(user.getName());
         userInfo.setGravatarUrl(GravatarUtil.getUrl(user.getEmail()));
+        userInfo.setProfilePicture(user.getProfilePicture());
 
         NoolResponse noolResponse = new NoolResponse();
         noolResponse.setId(createdNool.getId());
@@ -82,6 +83,7 @@ public class NoolService {
         noolUserInfo.setId(nool.getCreatedBy().getId());
         noolUserInfo.setName(nool.getCreatedBy().getName());
         noolUserInfo.setGravatarUrl(GravatarUtil.getUrl(nool.getCreatedBy().getEmail()));
+        noolUserInfo.setProfilePicture(nool.getCreatedBy().getProfilePicture());
 
         List<Contribution> contributions = contributionRepository.findByNool(nool);
         List<ContributionResponse> contributionResponses = new ArrayList<>();
@@ -99,6 +101,7 @@ public class NoolService {
             userInfo.setId(contribution.getUser().getId());
             userInfo.setName(contribution.getUser().getName());
             userInfo.setGravatarUrl(GravatarUtil.getUrl(contribution.getUser().getEmail()));
+            userInfo.setProfilePicture(contribution.getUser().getProfilePicture());
             cr.setUser(userInfo);
 
             contributionResponses.add(cr);
@@ -150,6 +153,7 @@ public class NoolService {
             noolUserInfo.setId(nool.getCreatedBy().getId());
             noolUserInfo.setName(nool.getCreatedBy().getName());
             noolUserInfo.setGravatarUrl(GravatarUtil.getUrl(nool.getCreatedBy().getEmail()));
+            noolUserInfo.setProfilePicture(nool.getCreatedBy().getProfilePicture());
             threadSummary.setCreatedBy(noolUserInfo);
 
             Map<String, List<String>> rolesWithContributors = new LinkedHashMap<>();

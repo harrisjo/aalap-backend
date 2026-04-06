@@ -41,5 +41,4 @@ cloudinary:
 resend:
   # Set RESEND_API_KEY in your environment. Set RESEND_FROM to a verified sender address.
   api-key: ${RESEND_API_KEY:}
-  from-address: ${RESEND_FROM:Aalap RESEND_FROM=Aalap <noreply@ulduebgi.resend.app>
-}
+  from-address: "${RESEND_FROM:Aalap <onboarding@resend.dev>}"

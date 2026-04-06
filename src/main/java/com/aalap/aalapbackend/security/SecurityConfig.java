@@ -13,8 +13,6 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
-import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 import org.springframework.security.web.header.writers.StaticHeadersWriter;
 import org.springframework.web.cors.CorsConfiguration;
@@ -63,15 +61,13 @@ public class SecurityConfig {
                             "camera=(), microphone=(), geolocation=(), payment=()"));
                 })
                 // ── CSRF ──────────────────────────────────────────────────────────
-                // Now using the double-submit cookie pattern (CookieCsrfTokenRepository).
-                // Spring Security writes XSRF-TOKEN (non-HttpOnly) on every response;
-                // the SPA reads it and echoes it back as X-XSRF-TOKEN header.
-                // Auth endpoints are exempt — login/register have no prior session token.
-                .csrf(csrf -> csrf
-                        .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
-                        .ignoringRequestMatchers("/api/auth/**")
-                        .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
-                )
+                // CSRF is disabled for this stateless REST API.
+                // Reason: the frontend (Vercel) and backend (HF Space) are on different
+                // domains. The double-submit cookie pattern cannot work cross-origin
+                // because document.cookie on Vercel cannot read cookies set on the
+                // backend's domain. Since this is a stateless JWT API with CORS
+                // restrictions, CSRF is not needed (Spring Security recommendation).
+                .csrf(csrf -> csrf.disable())
                 .formLogin(form -> form.disable())
                 .httpBasic(basic -> basic.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))

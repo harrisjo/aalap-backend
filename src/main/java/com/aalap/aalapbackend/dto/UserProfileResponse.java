@@ -12,6 +12,7 @@ public class UserProfileResponse {
     String email;
     String bio;
     String gravatarUrl;
+    String profilePicture;
     LocalDateTime createdAt;
     List<ThreadSummary> threadsCreated;
     List<ContributionResponse>  contributions;

@@ -2,6 +2,7 @@ package com.aalap.aalapbackend.service;
 
 import com.resend.Resend;
 import com.resend.services.emails.model.CreateEmailOptions;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -19,12 +20,24 @@ public class EmailService {
 
     private final Resend   resend;
     private final String   fromAddress;
+    private final String   apiKey;
 
     public EmailService(
             @Value("${resend.api-key}") String apiKey,
             @Value("${resend.from-address}") String fromAddress) {
+        this.apiKey      = apiKey;
         this.resend      = new Resend(apiKey);
         this.fromAddress = fromAddress;
+    }
+
+    @PostConstruct
+    public void logConfig() {
+        if (apiKey == null || apiKey.isBlank()) {
+            log.warn("Resend: RESEND_API_KEY is not set — emails will not be delivered");
+        } else {
+            log.info("Resend: configured OK (key={}..., from={})",
+                    apiKey.substring(0, Math.min(8, apiKey.length())), fromAddress);
+        }
     }
 
     // ─── PUBLIC API ──────────────────────────────────────────────────────────────
@@ -62,8 +75,10 @@ public class EmailService {
                     .html(html)
                     .build();
             resend.emails().send(options);
+            log.info("Resend: delivered '{}' to {}", subject, to);
         } catch (Exception e) {
-            log.warn("Resend: failed to deliver '{}' to {}: {}", subject, to, e.getMessage());
+            // Log full stack trace so the root cause is visible in the console
+            log.warn("Resend: failed to deliver '{}' to {}", subject, to, e);
         }
     }
 

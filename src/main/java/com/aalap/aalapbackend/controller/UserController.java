@@ -6,10 +6,13 @@ import com.aalap.aalapbackend.entity.User;
 import com.aalap.aalapbackend.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 
 @RestController
 @RequestMapping("/api/users")
@@ -28,9 +31,19 @@ public class UserController {
 
     @GetMapping("/me")
     public UserProfileResponse getMyProfile(@AuthenticationPrincipal User user) {
-        // JwtFilter already validated the token and stored the User in the SecurityContext —
-        // no need to re-parse the JWT here.
         return userService.getUserProfile(user.getId());
+    }
+
+    @PatchMapping(value = "/me/picture", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public UserProfileResponse uploadProfilePicture(
+            @RequestParam("file") MultipartFile file) throws IOException {
+        return userService.updateProfilePicture(file);
+    }
+
+    @DeleteMapping("/me/picture")
+    public ResponseEntity<Void> removeProfilePicture() {
+        userService.removeProfilePicture();
+        return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/me")

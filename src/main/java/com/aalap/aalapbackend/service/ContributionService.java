@@ -185,6 +185,7 @@ public class ContributionService {
         userInfo.setId(c.getUser().getId());
         userInfo.setName(c.getUser().getName());
         userInfo.setGravatarUrl(GravatarUtil.getUrl(c.getUser().getEmail()));
+        userInfo.setProfilePicture(c.getUser().getProfilePicture());
         // email intentionally omitted — see UserInfo.java
 
         ContributionResponse response = new ContributionResponse();

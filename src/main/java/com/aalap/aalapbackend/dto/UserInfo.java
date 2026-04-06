@@ -14,4 +14,5 @@ public class UserInfo {
     long   id;
     String name;
     String gravatarUrl;
+    String profilePicture;
 }
