@@ -19,7 +19,7 @@ public class AuthService {
     PasswordEncoder passwordEncoder;
     JwtUtil jwtUtil;
     EmailService emailService;
-
+///test
     @Autowired
     public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder,
                        JwtUtil jwtUtil, EmailService emailService) {
