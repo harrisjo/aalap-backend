@@ -26,23 +26,30 @@ spring:
       connection-test-query: SELECT 1
       keepalive-time: 60000
 
+  sql:
+    init:
+      # 'always' runs schema.sql on every start (safe — all statements use IF NOT EXISTS)
+      # Set SQL_INIT_MODE=never in env to skip if you're confident tables are already correct
+      mode: ${SQL_INIT_MODE:always}
+      schema-locations: classpath:schema.sql
+      # Run schema init BEFORE Hibernate validation
+      continue-on-error: false
+
   jpa:
+    # ddl-auto=none — Hibernate does NOT touch the schema.
+    # Schema is managed by schema.sql (see above) for full TiDB Cloud Serverless compatibility.
     hibernate:
-      # Defaults to validate for production safety, can be overridden to 'update' locally
-      ddl-auto: ${DDL_AUTO:update}
-    show-sql: ${SHOW_SQL:false}   # Never log raw SQL in production — set SHOW_SQL=true env var locally if needed
+      ddl-auto: none
+    show-sql: ${SHOW_SQL:false}
     open-in-view: false
+    # Run sql.init AFTER the datasource is wired but BEFORE Hibernate validation
+    defer-datasource-initialization: false
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQLDialect
-        # TiDB Cloud Serverless compatibility: do NOT let Hibernate try to create the schema/catalog
-        hbm2ddl:
-          create_namespaces: false
-        # Ensures Hibernate uses JDBC batch operations safely with TiDB
         jdbc:
           batch_size: 20
           time_zone: UTC
-        # Needed for Hibernate 7 + TiDB: disable legacy identifier quoting that breaks TiDB DDL
         globally_quoted_identifiers: false
         format_sql: false
 
