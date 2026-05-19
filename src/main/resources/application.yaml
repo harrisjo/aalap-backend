@@ -8,20 +8,43 @@ spring:
       max-request-size: 20MB
 
   datasource:
-    # Looks for a Render DB URL first, falls back to localhost if not found
-    url: ${DB_URL:jdbc:mysql://localhost:3306/aalap}
+    # TiDB Cloud Serverless URL format:
+    # jdbc:mysql://<host>:4000/<database>?sslMode=VERIFY_IDENTITY&enabledTLSProtocols=TLSv1.2,TLSv1.3&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    # Make sure the database (e.g. "aalap") is created in TiDB Cloud Console first!
+    url: ${DB_URL:jdbc:mysql://localhost:3306/aalap?serverTimezone=UTC&allowPublicKeyRetrieval=true&useSSL=false}
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:root}
     driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      # TiDB Cloud Serverless free tier has connection limits — keep pool small
+      maximum-pool-size: 5
+      minimum-idle: 1
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      # Validate connections before use (important for cloud DBs that drop idle connections)
+      connection-test-query: SELECT 1
+      keepalive-time: 60000
 
   jpa:
     hibernate:
       # Defaults to validate for production safety, can be overridden to 'update' locally
       ddl-auto: ${DDL_AUTO:update}
-    show-sql: false   # Never log raw SQL in production — set SHOW_SQL=true env var locally if needed
+    show-sql: ${SHOW_SQL:false}   # Never log raw SQL in production — set SHOW_SQL=true env var locally if needed
+    open-in-view: false
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQLDialect
+        # TiDB Cloud Serverless compatibility: do NOT let Hibernate try to create the schema/catalog
+        hbm2ddl:
+          create_namespaces: false
+        # Ensures Hibernate uses JDBC batch operations safely with TiDB
+        jdbc:
+          batch_size: 20
+          time_zone: UTC
+        # Needed for Hibernate 7 + TiDB: disable legacy identifier quoting that breaks TiDB DDL
+        globally_quoted_identifiers: false
+        format_sql: false
 
 jwt:
   # No fallback — app will fail to start if JWT_SECRET env var is not set
@@ -31,6 +54,7 @@ jwt:
 logging:
   level:
     org.springframework.security: INFO # Swapped to INFO to keep production logs clean
+    org.hibernate.SQL: ${SHOW_SQL:INFO}
 
 cloudinary:
   # Notice there are no fallback values here! This forces the app to get them securely from the environment.
