@@ -17,7 +17,7 @@ spring:
   jpa:
     hibernate:
       # Defaults to validate for production safety, can be overridden to 'update' locally
-      ddl-auto: ${DDL_AUTO:validate}
+      ddl-auto: ${DDL_AUTO:update}
     show-sql: false   # Never log raw SQL in production — set SHOW_SQL=true env var locally if needed
     properties:
       hibernate:
